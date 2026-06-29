@@ -97,6 +97,20 @@ def hermes_1b_config() -> HermesConfig:
     )
 
 
+def hermes_500m_config() -> HermesConfig:
+    """~500M parameter variant — quality/speed sweet spot (~280 MB at INT4)."""
+    return HermesConfig(
+        vocab_size=32000,
+        hidden_size=1536,
+        intermediate_size=4096,
+        num_layers=24,
+        num_heads=24,
+        num_kv_heads=6,
+        head_dim=64,
+        max_seq_len=4096,
+    )
+
+
 def hermes_270m_config() -> HermesConfig:
     """~270M parameter variant — smallest, FunctionGemma-class footprint."""
     return HermesConfig(
@@ -113,6 +127,7 @@ def hermes_270m_config() -> HermesConfig:
 
 PRESETS = {
     "hermes-1b": hermes_1b_config,
+    "hermes-500m": hermes_500m_config,
     "hermes-270m": hermes_270m_config,
 }
 
