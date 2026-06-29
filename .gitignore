@@ -1,0 +1,16 @@
+# Python
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+.venv/
+venv/
+
+# Artifacts
+checkpoints/
+dist/
+tokenizer/*.model
+tokenizer/*.vocab
+*.tflite
+*.litertlm
+*.task

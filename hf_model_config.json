@@ -1,0 +1,51 @@
+{
+  "model_name": "hermes-mobile-1b-litertlm",
+  "display_name": "Hermes Mobile 1B (LiteRT-LM)",
+  "format": "litertlm",
+  "quantization": "int4_per_channel",
+  "context_length": 4096,
+  "parameters": "~1B",
+  "framework": "litert-lm",
+  "architecture": "decoder-only-gqa",
+  "license": "apache-2.0",
+  "tags": [
+    "litert-lm",
+    "litert",
+    "on-device",
+    "mobile",
+    "agent",
+    "tool-calling",
+    "google-ai-edge-gallery"
+  ],
+  "library_name": "litert-lm",
+  "pipeline_tag": "text-generation",
+  "base_model": "hermes-edge/hermes-1b",
+  "intended_org": "litert-community",
+  "files": {
+    "model": "hermes-mobile-1b-int4.litertlm",
+    "model_card": "model_card.md"
+  },
+  "config": {
+    "vocab_size": 32000,
+    "hidden_size": 2048,
+    "intermediate_size": 5632,
+    "num_layers": 22,
+    "num_heads": 32,
+    "num_kv_heads": 4,
+    "head_dim": 64,
+    "max_seq_len": 4096,
+    "rope_theta": 10000.0,
+    "rms_norm_eps": 1e-06,
+    "tie_embeddings": true,
+    "attention": "grouped_query_attention",
+    "activation": "silu_swiglu",
+    "normalization": "rms_norm",
+    "position_embedding": "rope"
+  },
+  "runtime": {
+    "min_android_version": 10,
+    "recommended_ram_gb": 6,
+    "accelerators": ["gpu", "cpu"],
+    "approx_file_size_mb": 600
+  }
+}
