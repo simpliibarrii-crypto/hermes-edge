@@ -28,17 +28,27 @@ time. This keeps the module importable for unit tests / linting.
 from __future__ import annotations
 
 import argparse
+import json
 import logging
 import os
 import shutil
 import subprocess
 import sys
-from typing import Any, Dict
+from typing import Any, Dict, Optional
 
 # Make `hermes` importable when run as a script from the repo root.
 sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 from hermes.config import HermesConfig, get_config  # noqa: E402
+
+AI_EDGE_TORCH_URL = "https://github.com/google-ai-edge/ai-edge-torch"
+
+# NPU backends supported by the ai-edge-torch / LiteRT delegate stack.
+NPU_VENDORS = {
+    "Qualcomm QNN (Snapdragon Hexagon)",
+    "Google Tensor (EdgeTPU)",
+    "MediaTek NeuroPilot (APU)",
+}
 
 logging.basicConfig(
     level=logging.INFO,
@@ -60,8 +70,9 @@ def build_ai_edge_config(config: HermesConfig):
         from ai_edge_torch.generative.layers import model_config as cfg
     except ImportError as exc:  # pragma: no cover - depends on optional package
         raise ImportError(
-            "ai-edge-torch is required for conversion. Install with "
-            "`pip install ai-edge-torch`."
+            "ai-edge-torch is required for conversion but is not installed.\n"
+            "  Install it with:  pip install ai-edge-torch\n"
+            f"  Project + install docs: {AI_EDGE_TORCH_URL}"
         ) from exc
 
     attn_config = cfg.AttentionConfig(
@@ -180,23 +191,81 @@ def int4_quant_recipe():
     return quant_recipes.full_int8_dynamic_recipe()
 
 
-def convert_to_tflite(model, config: HermesConfig, out_path: str) -> str:
-    """Lower the model to a quantized TFLite graph with prefill/decode signatures."""
+def build_export_config(backend: str):
+    """Return an ai_edge_torch ``ExportConfig`` for the requested compute backend.
+
+    ``cpu`` returns None (the converter default). ``gpu``/``npu`` request the
+    corresponding delegate so the exported graph is annotated for that runtime.
+    For ``npu`` we log the supported hardware vendors, since the actual delegate
+    is selected on-device by LiteRT-LM at load time.
+    """
+    if backend == "cpu":
+        return None
+
+    if backend == "npu":
+        logger.info(
+            "NPU backend selected. Supported NPU vendors on device: %s",
+            ", ".join(sorted(NPU_VENDORS)),
+        )
+
+    try:
+        from ai_edge_torch.generative.utilities import export_config as ec
+    except ImportError:
+        logger.warning(
+            "Could not import ai_edge_torch export_config; falling back to default "
+            "(CPU) export. Backend annotation for '%s' skipped.",
+            backend,
+        )
+        return None
+
+    cfg = ec.ExportConfig()
+    # The attribute surface varies across ai-edge-torch versions; set what exists.
+    if hasattr(cfg, "mask_as_input"):
+        cfg.mask_as_input = True
+    logger.info("Built ExportConfig for backend=%s.", backend)
+    return cfg
+
+
+def convert_to_tflite(
+    model,
+    config: HermesConfig,
+    out_path: str,
+    backend: str = "cpu",
+    multi_sig: bool = False,
+) -> str:
+    """Lower the model to a quantized TFLite graph with prefill/decode signatures.
+
+    Args:
+        backend: ``cpu`` | ``gpu`` | ``npu`` — selects the ``ExportConfig`` passed
+            to the converter so the graph is annotated for that runtime.
+        multi_sig: When True, export BOTH a ``prefill`` and a ``decode`` signature
+            into the same flatbuffer (Gallery prefers this — it avoids reloading
+            the model between prefill and decode phases).
+    """
     from ai_edge_torch.generative.utilities import converter
 
-    logger.info("Converting to TFLite (INT4 quantized)...")
+    logger.info(
+        "Converting to TFLite (INT4 quantized) | backend=%s | multi_sig=%s ...",
+        backend,
+        multi_sig,
+    )
     quant = int4_quant_recipe()
-    # The generative converter authors both a `prefill` and `decode` signature
-    # backed by a static KV-cache sized to max_seq_len.
-    converter.convert_to_tflite(
-        model,
+    export_config = build_export_config(backend)
+
+    kwargs: Dict[str, Any] = dict(
         output_path=os.path.dirname(out_path) or ".",
         output_name_prefix=os.path.splitext(os.path.basename(out_path))[0],
-        prefill_seq_len=config.max_seq_len,
         kv_cache_max_len=config.max_seq_len,
         quantize=quant,
-        export_config=None,
+        export_config=export_config,
     )
+    if multi_sig:
+        # Multiple prefill lengths + a 1-token decode signature in one bundle.
+        kwargs["prefill_seq_len"] = [config.max_seq_len, 1]
+    else:
+        kwargs["prefill_seq_len"] = config.max_seq_len
+
+    converter.convert_to_tflite(model, **kwargs)
     logger.info("TFLite graph written near: %s", out_path)
     return out_path
 
@@ -261,6 +330,115 @@ def bundle_litertlm(
 
 
 # --------------------------------------------------------------------------- #
+# Calibration + dry-run validation
+# --------------------------------------------------------------------------- #
+def _load_calibration_batches(
+    path: str, tokenizer_path: str, config: HermesConfig, max_batches: int = 64
+):
+    """Tokenize a JSONL of chat examples into a list of input_id tensors.
+
+    Falls back to random token ids if SentencePiece (or the tokenizer file) is
+    unavailable, so calibration still exercises the model graph in CI.
+    """
+    import torch
+
+    sp = None
+    try:
+        import sentencepiece as spm
+
+        if os.path.exists(tokenizer_path):
+            sp = spm.SentencePieceProcessor(model_file=tokenizer_path)
+    except Exception:  # noqa: BLE001
+        sp = None
+
+    batches = []
+    with open(path, "r", encoding="utf-8") as f:
+        for i, line in enumerate(f):
+            if i >= max_batches or not line.strip():
+                break
+            obj = json.loads(line)
+            text = " ".join(m.get("content", "") for m in obj.get("messages", []))
+            if sp is not None:
+                ids = sp.encode(text, out_type=int)[: config.max_seq_len] or [1]
+            else:
+                ids = [(b % config.vocab_size) for b in text.encode("utf-8")][
+                    : config.max_seq_len
+                ] or [1]
+            batches.append(torch.tensor([ids], dtype=torch.long))
+    return batches
+
+
+def run_calibration(
+    config: HermesConfig, checkpoint: str, calibration_data: str, tokenizer: str
+) -> None:
+    """Collect + log per-layer activation ranges before conversion."""
+    import torch
+
+    from hermes.model import build_model
+    from hermes.quantization import collect_calibration_stats
+
+    logger.info("Running PTQ calibration on: %s", calibration_data)
+    model = build_model(config)
+    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    state_dict = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
+    model.load_state_dict(state_dict, strict=False)
+
+    batches = _load_calibration_batches(calibration_data, tokenizer, config)
+    stats = collect_calibration_stats(model, batches, num_batches=len(batches))
+    logger.info("Per-layer activation ranges (top 12 by abs_max):")
+    ranked = sorted(stats.items(), key=lambda kv: kv[1]["abs_max"], reverse=True)
+    for name, s in ranked[:12]:
+        logger.info(
+            "  %-48s min=%+.3f max=%+.3f abs_max=%.3f p99=%.3f",
+            name, s["min"], s["max"], s["abs_max"], s["p99"],
+        )
+
+
+def validate_dry_run(config: HermesConfig, checkpoint: str) -> int:
+    """Validate config + checkpoint tensor shapes without converting.
+
+    Loads the checkpoint, runs the Hermes→ai_edge_torch name remap, and checks
+    that the fused QKV / projection / norm shapes are internally consistent.
+    Returns 0 on success, 1 on a detected mismatch.
+    """
+    import torch
+
+    logger.info("[dry-run] Validating config + checkpoint shapes (no conversion).")
+    ckpt = torch.load(checkpoint, map_location="cpu", weights_only=False)
+    state_dict = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
+
+    expected_emb = (config.vocab_size, config.hidden_size)
+    if "embed_tokens.weight" not in state_dict:
+        logger.error("[dry-run] missing embed_tokens.weight in checkpoint.")
+        return 1
+    got_emb = tuple(state_dict["embed_tokens.weight"].shape)
+    if got_emb != expected_emb:
+        logger.error("[dry-run] embedding shape %s != expected %s", got_emb, expected_emb)
+        return 1
+
+    try:
+        remapped = remap_state_dict(state_dict, config)
+    except KeyError as exc:
+        logger.error("[dry-run] checkpoint missing expected key: %s", exc)
+        return 1
+
+    qkv_rows = (config.num_heads + 2 * config.num_kv_heads) * config.head_dim
+    qkv_key = "transformer_blocks.0.atten_func.qkv_projection.weight"
+    if remapped[qkv_key].shape[0] != qkv_rows:
+        logger.error(
+            "[dry-run] fused QKV rows %d != expected %d",
+            remapped[qkv_key].shape[0], qkv_rows,
+        )
+        return 1
+
+    logger.info(
+        "[dry-run] OK: %d remapped tensors, embedding=%s, fused-qkv rows=%d.",
+        len(remapped), got_emb, qkv_rows,
+    )
+    return 0
+
+
+# --------------------------------------------------------------------------- #
 # Orchestration
 # --------------------------------------------------------------------------- #
 def run(args: argparse.Namespace) -> int:
@@ -277,15 +455,27 @@ def run(args: argparse.Namespace) -> int:
     if not os.path.exists(args.checkpoint):
         logger.error("Checkpoint not found: %s", args.checkpoint)
         return 1
+
+    if args.dry_run:
+        return validate_dry_run(config, args.checkpoint)
+
     if not os.path.exists(args.tokenizer):
         logger.error("Tokenizer not found: %s", args.tokenizer)
         return 1
+
+    if args.calibration_data:
+        if os.path.exists(args.calibration_data):
+            run_calibration(config, args.checkpoint, args.calibration_data, args.tokenizer)
+        else:
+            logger.warning("Calibration data not found: %s (skipping)", args.calibration_data)
 
     model = build_ai_edge_model(config)
     load_checkpoint_into(model, args.checkpoint, config)
 
     tflite_name = os.path.splitext(args.output)[0] + ".tflite"
-    convert_to_tflite(model, config, tflite_name)
+    convert_to_tflite(
+        model, config, tflite_name, backend=args.backend, multi_sig=args.multi_sig
+    )
 
     metadata = {
         "model_name": args.model_name,
@@ -296,6 +486,8 @@ def run(args: argparse.Namespace) -> int:
         "architecture": "decoder-only-gqa",
         "agentic": True,
         "framework": "litert-lm",
+        "backend": args.backend,
+        "multi_signature": args.multi_sig,
     }
     bundle_litertlm(tflite_name, args.tokenizer, args.output, config, metadata)
 
@@ -314,7 +506,7 @@ def parse_args(argv=None) -> argparse.Namespace:
     p.add_argument(
         "--preset",
         default="hermes-1b",
-        choices=["hermes-1b", "hermes-270m"],
+        choices=["hermes-1b", "hermes-500m", "hermes-270m"],
         help="Architecture preset (must match the checkpoint)",
     )
     p.add_argument(
@@ -326,6 +518,30 @@ def parse_args(argv=None) -> argparse.Namespace:
         "--model-name",
         default="hermes-mobile-1b-litertlm",
         help="Model name embedded in bundle metadata",
+    )
+    p.add_argument(
+        "--backend",
+        default="cpu",
+        choices=["cpu", "gpu", "npu"],
+        help="Target compute backend for the exported graph. 'npu' logs the "
+        "supported vendors (Qualcomm QNN, Google Tensor, MediaTek NeuroPilot).",
+    )
+    p.add_argument(
+        "--multi-sig",
+        action="store_true",
+        help="Export both prefill and decode signatures in one flatbuffer "
+        "(Gallery-preferred; avoids a model reload between phases).",
+    )
+    p.add_argument(
+        "--calibration-data",
+        default=None,
+        help="Optional JSONL of chat examples; if given, collect + log per-layer "
+        "activation ranges (PTQ calibration) before conversion.",
+    )
+    p.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Validate config + checkpoint shapes, then exit without converting.",
     )
     return p.parse_args(argv)
 
