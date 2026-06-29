@@ -16,3 +16,4 @@ tf-nightly  # ai-edge-torch lowers through TFLite; provides the converter
 
 # Utilities
 tqdm>=4.66.0
+psutil>=5.9.0  # memory profiling in scripts/benchmark.py

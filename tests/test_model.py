@@ -16,7 +16,13 @@ from hermes.chat_template import (  # noqa: E402
     format_tool_call,
     parse_tool_call,
 )
-from hermes.config import HermesConfig, get_config, hermes_1b_config, hermes_270m_config  # noqa: E402
+from hermes.config import (  # noqa: E402
+    HermesConfig,
+    get_config,
+    hermes_1b_config,
+    hermes_270m_config,
+    hermes_500m_config,
+)
 
 torch = pytest.importorskip("torch")
 
@@ -39,8 +45,18 @@ def test_config_rejects_bad_gqa():
 
 def test_get_config_presets():
     assert get_config("hermes-270m").num_layers == hermes_270m_config().num_layers
+    assert get_config("hermes-500m").num_layers == hermes_500m_config().num_layers
     with pytest.raises(KeyError):
         get_config("nope")
+
+
+def test_hermes_500m_config():
+    cfg = hermes_500m_config()
+    assert cfg.hidden_size == 1536
+    assert cfg.num_heads == 24 and cfg.num_kv_heads == 6
+    assert cfg.num_layers == 24
+    assert cfg.hidden_size == cfg.num_heads * cfg.head_dim
+    assert "hermes-500m" in get_config.__globals__["PRESETS"]
 
 
 def test_forward_and_loss():

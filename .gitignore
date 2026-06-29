@@ -14,3 +14,7 @@ tokenizer/*.vocab
 *.tflite
 *.litertlm
 *.task
+
+# Eval / benchmark outputs
+benchmark_results.json
+eval_results.json
