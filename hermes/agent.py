@@ -1,12 +1,82 @@
 import logging
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
-from hermes.chat_template import build_prompt, Message, format_tool_call, parse_tool_call
-from scripts.deepseek_reasoning_template import ReasoningPipeline, ReasoningResult
-from scripts.hermes_tool_format import ToolRegistry, HermesToolFormatter, ToolDef
+from hermes.chat_template import Message
+from hermes.litert_model import LiteRTModel
+from hermes.router import classify, get_intent, INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
+from scripts.deepseek_reasoning_template import ReasoningPipeline
+from scripts.hermes_tool_format import ToolRegistry, HermesToolFormatter
 
 log = logging.getLogger(__name__)
+
+
+# ── Model Manager ─────────────────────────────────────────────────
+
+
+class ModelManager:
+    """Multi-model lifecycle for intent-based routing.
+
+    Keeps a hot model (270M, ~180 MB) always loaded for instant chat.
+    Specialist models (reasoning, tools) load on demand.
+    LiteRT-LM fast initialization makes on-demand loading practical.
+    """
+
+    def __init__(self, backend: str = "auto"):
+        self._models: dict[str, LiteRTModel] = {}
+        self._hot_key: str = ""
+        self.current_key: str = ""
+        self.backend = backend
+
+    def load_hot(self, path: str) -> bool:
+        p = Path(path).resolve()
+        m = LiteRTModel(str(p), backend=self.backend)
+        if m.load():
+            self._models["_hot"] = m
+            self._hot_key = "_hot"
+            self.current_key = "_hot"
+            log.info("Hot model loaded: %s (%.1f MB)", p.name, p.stat().st_size / 1_048_576)
+            return True
+        log.warning("Failed to load hot model: %s", path)
+        return False
+
+    def register(self, key: str, path: str) -> None:
+        p = Path(path).resolve()
+        if not p.exists():
+            log.warning("Model path not found: %s (registering anyway)", path)
+        self._models[key] = LiteRTModel(str(p), backend=self.backend)
+
+    def select(self, key: str) -> LiteRTModel:
+        if key not in self._models:
+            return self._fallback()
+        m = self._models[key]
+        if not m._loaded:
+            p = Path(m.model_path)
+            if not p.exists():
+                log.warning("Model file missing: %s", p)
+                return self._fallback()
+            m.load()
+        self.current_key = key
+        return m
+
+    def get_current(self) -> LiteRTModel | None:
+        if self.current_key and self.current_key in self._models:
+            return self._models[self.current_key]
+        return self._fallback() if self._hot_key else None
+
+    def _fallback(self) -> LiteRTModel:
+        if self._hot_key and self._hot_key in self._models:
+            self.current_key = self._hot_key
+            return self._models[self._hot_key]
+        raise RuntimeError("No model available")
+
+    def resolve(self, intent: str) -> LiteRTModel:
+        key = intent if intent in (INTENT_REASONING, INTENT_TOOLS) else "_hot"
+        return self.select(key)
+
+
+# ── Agent Config ──────────────────────────────────────────────────
 
 
 @dataclass
@@ -18,13 +88,23 @@ class AgentConfig:
     use_reasoning: bool = True
     max_thinking_tokens: int = 128
     enable_mtp: bool = True
-    system_prompt: str = ""
+    enable_routing: bool = True
 
-
-DEFAULT_SYSTEM = (
-    "You are Hermes Edge, a fast on-device AI agent. "
-    "Think briefly, answer naturally. Be concise and helpful."
-)
+    intent_temperature: dict = field(default_factory=lambda: {
+        INTENT_CHAT: 0.7,
+        INTENT_REASONING: 0.6,
+        INTENT_TOOLS: 0.5,
+    })
+    intent_max_tokens: dict = field(default_factory=lambda: {
+        INTENT_CHAT: 128,
+        INTENT_REASONING: 384,
+        INTENT_TOOLS: 256,
+    })
+    intent_mtp: dict = field(default_factory=lambda: {
+        INTENT_CHAT: True,
+        INTENT_REASONING: False,
+        INTENT_TOOLS: True,
+    })
 
 
 @dataclass
@@ -34,8 +114,10 @@ class AgentTurn:
     thinking: str = ""
     tool_calls: list[dict] = field(default_factory=list)
     tool_results: list[dict] = field(default_factory=list)
+    intent: str = INTENT_CHAT
     latency_ms: float = 0.0
     tokens_used: int = 0
+    model_used: str = ""
 
 
 @dataclass
@@ -50,7 +132,12 @@ class Conversation:
         self.messages.append(Message(role="assistant", content=text))
 
     def add_tool_result(self, name: str, content: str) -> None:
-        self.messages.append(Message(role="tool", content=f"<tool_response>{name}: {content}</tool_response>"))
+        self.messages.append(
+            Message(role="tool", content=f"<tool_response>{name}: {content}</tool_response>")
+        )
+
+
+# ── Agent ─────────────────────────────────────────────────────────
 
 
 class HermesAgent:
@@ -60,8 +147,10 @@ class HermesAgent:
         model=None,
         tool_registry: ToolRegistry | None = None,
         config: AgentConfig | None = None,
+        model_manager: ModelManager | None = None,
     ):
         self.model = model
+        self.model_manager = model_manager
         self.config = config or AgentConfig()
         self.tools = tool_registry or ToolRegistry()
         self.conversation = Conversation()
@@ -74,22 +163,43 @@ class HermesAgent:
     def set_model(self, model) -> None:
         self.model = model
 
-    def register_tool(self, name: str, description: str, func, parameters: dict | None = None) -> None:
+    def register_tool(
+        self, name: str, description: str, func, parameters: dict | None = None
+    ) -> None:
         self.tools.register(name, description, func, parameters)
 
     def run(self, user_input: str, context: str | None = None) -> str:
-        if not self.model:
+        if not self.model and not self.model_manager:
             return "Error: No model loaded."
 
         turn = AgentTurn(user_input=user_input)
         start = time.perf_counter()
 
+        intent = classify(user_input).intent if self.config.enable_routing else INTENT_CHAT
+        turn.intent = intent
+
+        if self.model_manager:
+            active_model = self.model_manager.resolve(intent)
+            turn.model_used = self.model_manager.current_key
+        else:
+            active_model = self.model
+            turn.model_used = "default"
+
+        temperature = self.config.intent_temperature.get(intent, self.config.temperature)
+        max_tokens = self.config.intent_max_tokens.get(intent, self.config.max_tokens)
+        enable_mtp = self.config.intent_mtp.get(intent, self.config.enable_mtp)
+
+        if hasattr(active_model, "enable_mtp"):
+            active_model.enable_mtp = enable_mtp
+
+        self.reasoning.use_reasoning = intent == INTENT_REASONING
         history = self._build_history_prompt()
         prompt = self.reasoning.build_reasoning_prompt(user_input, context or history)
+
         tool_defs = self.tools.get_defs()
         self.tool_formatter.set_tools(tool_defs)
 
-        raw_output = self._generate(prompt)
+        raw_output = self._generate(active_model, prompt, max_tokens, temperature)
         turn.tokens_used = max(1, len(raw_output) // 4)
 
         parsed = self.reasoning.parse_response(raw_output)
@@ -104,7 +214,9 @@ class HermesAgent:
                 name = call.get("name", "")
                 args = call.get("arguments", {})
                 result = self.tools.execute(name, args)
-                turn.tool_results.append({"name": name, "content": result.content, "success": result.success})
+                turn.tool_results.append(
+                    {"name": name, "content": result.content, "success": result.success}
+                )
                 self.conversation.add_tool_result(name, result.content)
 
             tool_prompt = self.reasoning.build_tool_result_prompt(
@@ -112,7 +224,7 @@ class HermesAgent:
                 tool_content=result.content if parsed.tool_calls else "",
                 original_prompt=prompt,
             )
-            raw_output = self._generate(tool_prompt)
+            raw_output = self._generate(active_model, tool_prompt, max_tokens, temperature)
             parsed = self.reasoning.parse_response(raw_output)
             if parsed.answer:
                 turn.assistant_response += "\n" + parsed.answer
@@ -123,13 +235,9 @@ class HermesAgent:
         self.conversation.add_user(user_input)
         self.conversation.add_assistant(turn.assistant_response)
 
-        if turn.thinking:
-            log.debug("Thinking (%d chars): %s", len(turn.thinking), turn.thinking[:200])
         log.info(
-            "Agent turn: %d ms, %d tokens, %d tool calls",
-            turn.latency_ms,
-            turn.tokens_used,
-            len(turn.tool_calls),
+            "Agent: %s ms, %d tok, intent=%s, model=%s",
+            f"{turn.latency_ms:.0f}", turn.tokens_used, turn.intent, turn.model_used,
         )
         return turn.assistant_response
 
@@ -144,18 +252,17 @@ class HermesAgent:
                 parts.append(f"Assistant: {t.assistant_response[:200]}")
         return "\n".join(parts)
 
-    def _generate(self, prompt: str) -> str:
-        if self.config.enable_mtp and hasattr(self.model, "enable_mtp"):
-            self.model.enable_mtp = True
-
-        if hasattr(self.model, "generate"):
-            return self.model.generate(
+    def _generate(
+        self, model, prompt: str, max_tokens: int, temperature: float
+    ) -> str:
+        if hasattr(model, "generate"):
+            return model.generate(
                 prompt,
-                max_tokens=self.config.max_tokens,
-                temperature=self.config.temperature,
+                max_tokens=max_tokens,
+                temperature=temperature,
                 top_k=self.config.top_k,
             )
-        return f"[Model would generate response for: {prompt[:50]}...]"
+        return ""
 
     def get_conversation_summary(self) -> str:
         turns = len(self.conversation.turns)
