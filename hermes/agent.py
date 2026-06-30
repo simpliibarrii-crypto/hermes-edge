@@ -168,6 +168,61 @@ class HermesAgent:
     ) -> None:
         self.tools.register(name, description, func, parameters)
 
+    def register_default_tools(self) -> None:
+        """Register built-in tools: web search, calculator."""
+        try:
+            from hermes.web_search import web_search as _ws
+            self.register_tool(
+                "web_search",
+                "Search the web for current information. Use for news, facts, real-time data.",
+                _ws,
+                {
+                    "type": "object",
+                    "properties": {
+                        "query": {
+                            "type": "string",
+                            "description": "Search query (be specific)",
+                        },
+                        "max_results": {
+                            "type": "integer",
+                            "description": "Number of results (1-5)",
+                            "default": 3,
+                        },
+                    },
+                    "required": ["query"],
+                },
+            )
+        except ImportError:
+            log.info("web_search tool not available (hermes.web_search not found)")
+
+        try:
+            import math as _math
+
+            def _calc(expr: str) -> str:
+                safe = {"abs": abs, "round": round, "int": int, "float": float,
+                        "min": min, "max": max, "sum": sum, "pow": pow}
+                safe.update({k: getattr(_math, k) for k in dir(_math)
+                            if not k.startswith("_") and callable(getattr(_math, k))})
+                return str(eval(expr, {"__builtins__": {}}, safe))
+
+            self.register_tool(
+                "calculator",
+                "Evaluate mathematical expressions. Supports +, -, *, /, sqrt, sin, cos, etc.",
+                _calc,
+                {
+                    "type": "object",
+                    "properties": {
+                        "expr": {
+                            "type": "string",
+                            "description": "Math expression (e.g., 'sqrt(144) + 42')",
+                        }
+                    },
+                    "required": ["expr"],
+                },
+            )
+        except ImportError:
+            pass
+
     def run(self, user_input: str, context: str | None = None) -> str:
         if not self.model and not self.model_manager:
             return "Error: No model loaded."
