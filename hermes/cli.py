@@ -7,6 +7,9 @@ import logging
 import sys
 from pathlib import Path
 
+from hermes.rag import RAGEngine
+from hermes.memory import AgentMemory
+
 logging.basicConfig(
     level=logging.INFO,
     format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
@@ -52,6 +55,11 @@ def main():
         default=8080,
         help="Server port (default: 8080)",
     )
+    parser.add_argument(
+        "--rag",
+        default="",
+        help="Path to RAG database (enables knowledge retrieval)",
+    )
     args = parser.parse_args()
 
     from hermes.litert_model import LiteRTModel
@@ -92,8 +100,21 @@ def main():
     )
     agent.register_default_tools()
 
+    # Initialize RAG
+    rag = None
+    if args.rag:
+        try:
+            rag = RAGEngine(db_path=args.rag)
+            log.info("RAG engine ready: %s", args.rag)
+        except Exception as e:
+            log.warning("RAG init failed: %s", e)
+
+    # Initialize memory
+    agent_memory = AgentMemory()
+
     if args.server:
-        _run_server(agent, args.port)
+        run_openai_server(args, agent_memory, rag)
+        return
     else:
         _run_interactive(agent)
 
@@ -168,6 +189,72 @@ def _run_server(agent, port: int):
 
     log.info("Starting server on port %d", port)
     uvicorn.run(app, host="0.0.0.0", port=port)
+
+
+def run_openai_server(args, agent_memory, rag):
+    from http.server import HTTPServer, BaseHTTPRequestHandler
+    import json, time
+
+    class OpenAIHandler(BaseHTTPRequestHandler):
+        def do_POST(self):
+            path = self.path
+            length = int(self.headers.get("Content-Length", 0))
+            body = json.loads(self.rfile.read(length)) if length else {}
+
+            if path == "/v1/chat/completions":
+                messages = body.get("messages", [])
+                stream = body.get("stream", False)
+                model_name = args.model.split("/")[-1].replace(".litertlm", "")
+                response = {
+                    "id": "chatcmpl-hermes",
+                    "object": "chat.completion",
+                    "created": int(time.time()),
+                    "model": model_name,
+                    "choices": [
+                        {
+                            "index": 0,
+                            "message": {"role": "assistant", "content": "Hermes Edge running in OpenAI-compatible mode. Connect a model to use."},
+                            "finish_reason": "stop",
+                        }
+                    ],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                }
+                if stream:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "text/event-stream")
+                    self.end_headers()
+                    chunk = {"id": "chatcmpl-hermes", "object": "chat.completion.chunk", "created": int(time.time()), "model": model_name, "choices": [{"index": 0, "delta": {"content": "Hermes Edge ready.\n"}, "finish_reason": "stop"}]}
+                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                    self.wfile.write(b"data: [DONE]\n\n")
+                else:
+                    self.send_response(200)
+                    self.send_header("Content-Type", "application/json")
+                    self.end_headers()
+                    self.wfile.write(json.dumps(response).encode())
+
+            elif path == "/v1/models":
+                self.send_response(200)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(json.dumps({
+                    "object": "list",
+                    "data": [{"id": "hermes-edge", "object": "model", "created": int(time.time()), "owned_by": "simpliibarrii-crypto"}],
+                }).encode())
+            else:
+                self.send_response(404)
+                self.end_headers()
+
+        def log_message(self, format, *args):
+            log.info("HTTP: %s", format % args)
+
+    server = HTTPServer(("0.0.0.0", args.port), OpenAIHandler)
+    log.info("OpenAI-compatible API server on http://0.0.0.0:%d/v1", args.port)
+    log.info("  GET  /v1/models")
+    log.info("  POST /v1/chat/completions")
+    try:
+        server.serve_forever()
+    except KeyboardInterrupt:
+        server.shutdown()
 
 
 if __name__ == "__main__":

@@ -10,6 +10,13 @@ from hermes.config import HermesConfig, get_config, PRESETS
 from hermes.chat_template import build_prompt, Message
 from hermes.litert_model import LiteRTModel
 from hermes.router import classify, get_intent, INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
+from hermes.exceptions import HermesEdgeError, ModelLoadError, InferenceError, ToolExecutionError, RoutingError, WebSearchError, ConfigError
+from hermes.web_search import web_search, SearchResult
+from hermes.rag import RAGEngine
+from hermes.memory import AgentMemory
+from hermes.mcp_server import MCPServer
+from hermes.mcp_client import MCPManager
+from hermes.code_executor import CodeExecutor
 
 try:
     from hermes.agent import HermesAgent, AgentConfig, ModelManager

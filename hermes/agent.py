@@ -8,6 +8,10 @@ from hermes.litert_model import LiteRTModel
 from hermes.router import classify, get_intent, INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
 from scripts.deepseek_reasoning_template import ReasoningPipeline
 from scripts.hermes_tool_format import ToolRegistry, HermesToolFormatter
+from hermes.mcp_client import MCPManager
+from hermes.code_executor import CodeExecutor
+from hermes.memory import AgentMemory
+from hermes.rag import RAGEngine
 
 log = logging.getLogger(__name__)
 
@@ -90,6 +94,10 @@ class AgentConfig:
     enable_mtp: bool = True
     enable_routing: bool = True
 
+    mcp_servers: list[str] = field(default_factory=list)
+    memory: bool = False
+    rag_db: str = ""
+
     intent_temperature: dict = field(default_factory=lambda: {
         INTENT_CHAT: 0.7,
         INTENT_REASONING: 0.6,
@@ -159,6 +167,22 @@ class HermesAgent:
             max_thinking_tokens=self.config.max_thinking_tokens,
         )
         self.tool_formatter = HermesToolFormatter()
+        self.mcp_manager: MCPManager | None = None
+        self.code_executor: CodeExecutor | None = None
+        self.agent_memory: AgentMemory | None = None
+        self.rag: RAGEngine | None = None
+
+        if self.config.mcp_servers:
+            self._init_mcp(self.config.mcp_servers)
+        if self.config.memory:
+            self.agent_memory = AgentMemory()
+        if self.config.rag_db:
+            self.rag = RAGEngine(db_path=self.config.rag_db)
+
+        if self.mcp_manager:
+            self._register_mcp_tools()
+        self._register_code_tool()
+        self._register_knowledge_tool()
 
     def set_model(self, model) -> None:
         self.model = model
@@ -223,12 +247,112 @@ class HermesAgent:
         except ImportError:
             pass
 
+    def _init_mcp(self, servers: list[str]) -> None:
+        """Connect to MCP servers."""
+        self.mcp_manager = MCPManager()
+        for server_cmd in servers:
+            name = server_cmd.split()[-1] if " " in server_cmd else server_cmd
+            self.mcp_manager.connect_stdio(name, server_cmd)
+
+    def _register_mcp_tools(self) -> None:
+        """Register MCP tools in ToolRegistry."""
+        if not self.mcp_manager:
+            return
+        for tool in self.mcp_manager.get_all_tools():
+            server_name = tool.get("_mcp_server", "mcp")
+            tool_name = tool.get("name", "")
+            desc = tool.get("description", f"MCP tool from {server_name}")
+            input_schema = tool.get("inputSchema", {})
+            params = tool.get("parameters", input_schema)
+
+            def _make_mcp_call(srv: str, tname: str):
+                def _call(**kwargs):
+                    result = self.mcp_manager.call_tool(srv, tname, kwargs)
+                    content = result.get("content", "")
+                    if isinstance(content, list):
+                        content = " ".join(c.get("text", "") for c in content)
+                    return str(content)
+                return _call
+
+            self.tools.register(tool_name, desc, _make_mcp_call(server_name, tool_name), params)
+
+    def _register_code_tool(self) -> None:
+        """Register execute_python tool with CodeExecutor."""
+        self.code_executor = CodeExecutor()
+
+        def _execute_python(code: str) -> str:
+            result = self.code_executor.execute(code)
+            if result.success:
+                output = result.output
+                if result.variables:
+                    output += "\nVariables: " + str(result.variables)
+                return output
+            return f"Error: {result.error}"
+
+        self.register_tool(
+            "execute_python",
+            "Execute Python code in a restricted sandbox. Use for calculations, data processing, automation.",
+            _execute_python,
+            {
+                "type": "object",
+                "properties": {
+                    "code": {
+                        "type": "string",
+                        "description": "Python code to execute",
+                    }
+                },
+                "required": ["code"],
+            },
+        )
+
+    def _register_knowledge_tool(self) -> None:
+        """Register knowledge_search tool using RAGEngine."""
+        if not self.rag:
+            return
+
+        def _knowledge_search(query: str, top_k: int = 3) -> str:
+            return self.rag.get_relevant_context(query, top_k)
+
+        self.register_tool(
+            "knowledge_search",
+            "Search local knowledge base for relevant information. Use for facts, documentation, stored data.",
+            _knowledge_search,
+            {
+                "type": "object",
+                "properties": {
+                    "query": {
+                        "type": "string",
+                        "description": "Search query",
+                    },
+                    "top_k": {
+                        "type": "integer",
+                        "description": "Number of results (1-10)",
+                        "default": 3,
+                    },
+                },
+                "required": ["query"],
+            },
+        )
+
+    def _inject_memory_context(self, messages: list[Message]) -> list[Message]:
+        """Add memory summary to system prompt."""
+        if not self.agent_memory:
+            return messages
+        summary = self.agent_memory.get_summary()
+        if not summary:
+            return messages
+        return [Message(role="system", content=f"[Memory Context]\n{summary}")] + messages
+
     def run(self, user_input: str, context: str | None = None) -> str:
         if not self.model and not self.model_manager:
             return "Error: No model loaded."
 
         turn = AgentTurn(user_input=user_input)
         start = time.perf_counter()
+
+        if self.agent_memory:
+            self.conversation.messages = self._inject_memory_context(self.conversation.messages)
+            self.agent_memory.add_entry("user", user_input)
 
         intent = classify(user_input).intent if self.config.enable_routing else INTENT_CHAT
         turn.intent = intent
@@ -289,6 +413,8 @@ class HermesAgent:
         self.conversation.turns.append(turn)
         self.conversation.add_user(user_input)
         self.conversation.add_assistant(turn.assistant_response)
+        if self.agent_memory:
+            self.agent_memory.add_entry("assistant", turn.assistant_response)
 
         log.info(
             "Agent: %s ms, %d tok, intent=%s, model=%s",
