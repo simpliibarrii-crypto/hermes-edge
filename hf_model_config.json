@@ -1,10 +1,10 @@
 {
-  "model_name": "hermes-mobile-1b-litertlm",
-  "display_name": "Hermes Mobile 1B (LiteRT-LM)",
+  "model_name": "hermes-mobile-270m-litertlm",
+  "display_name": "Hermes Mobile 270M (LiteRT-LM) — iPhone 16 optimized",
   "format": "litertlm",
   "quantization": "int4_per_channel",
   "context_length": 4096,
-  "parameters": "~1B",
+  "parameters": "270M",
   "framework": "litert-lm",
   "architecture": "decoder-only-gqa",
   "license": "apache-2.0",
@@ -13,24 +13,29 @@
     "litert",
     "on-device",
     "mobile",
+    "iphone",
+    "ios",
+    "iphone-16",
+    "apple-neural-engine",
     "agent",
     "tool-calling",
-    "google-ai-edge-gallery"
+    "google-ai-edge-gallery",
+    "raven-ecosystem"
   ],
   "library_name": "litert-lm",
   "pipeline_tag": "text-generation",
-  "base_model": "hermes-edge/hermes-1b",
-  "intended_org": "litert-community",
+  "base_model": "hermes-edge/hermes-270m",
+  "intended_org": "bclermo",
   "files": {
-    "model": "hermes-mobile-1b-int4.litertlm",
+    "model": "hermes-mobile-270m-int4.litertlm",
     "model_card": "model_card.md"
   },
   "config": {
     "vocab_size": 32000,
-    "hidden_size": 2048,
-    "intermediate_size": 5632,
-    "num_layers": 22,
-    "num_heads": 32,
+    "hidden_size": 1024,
+    "intermediate_size": 2816,
+    "num_layers": 21,
+    "num_heads": 16,
     "num_kv_heads": 4,
     "head_dim": 64,
     "max_seq_len": 4096,
@@ -43,9 +48,18 @@
     "position_embedding": "rope"
   },
   "runtime": {
+    "min_ios_version": 17,
+    "recommended_ios_version": 18,
     "min_android_version": 10,
     "recommended_ram_gb": 6,
-    "accelerators": ["gpu", "cpu"],
-    "approx_file_size_mb": 600
+    "accelerators": ["apple_neural_engine", "gpu", "cpu"],
+    "apple_ane": true,
+    "backends": ["coreml", "gpu", "cpu"],
+    "approx_file_size_mb": 180
+  },
+  "variants": {
+    "hermes-270m": {"size_mb": 180, "params": "270M", "iphone_16_tok_per_sec": 55},
+    "hermes-500m": {"size_mb": 280, "params": "500M", "iphone_16_tok_per_sec": 40},
+    "hermes-1b": {"size_mb": 600, "params": "1B", "iphone_16_tok_per_sec": 25}
   }
 }

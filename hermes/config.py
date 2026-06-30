@@ -125,10 +125,79 @@ def hermes_270m_config() -> HermesConfig:
     )
 
 
+# ── Gemma-inspired presets (optimized for iPhone 16 A18 Pro / ANE) ──────────
+
+def gemma_3_1b_config() -> HermesConfig:
+    """Gemma 3 1B — Google's latest small model architecture.
+
+    Optimized for on-device inference with Apple Neural Engine:
+    - 32k vocab, 26 layers, 2048 hidden dim
+    - 16 heads, 8 KV heads (GQA ratio 2:1 — efficient for ANE)
+    - 8192 context window for longer conversations
+    - Ideal for iPhone 16 A18 Pro at INT4 (~250 MB on disk)
+    """
+    return HermesConfig(
+        vocab_size=32768,
+        hidden_size=2048,
+        intermediate_size=8192,
+        num_layers=26,
+        num_heads=16,
+        num_kv_heads=8,
+        head_dim=128,
+        max_seq_len=8192,
+        rope_theta=10000.0,
+    )
+
+
+def gemma_2_2b_config() -> HermesConfig:
+    """Gemma 2 2B — higher quality with shared KV-heads.
+
+    Uses deeper GQA (2 KV heads shared across 16 query heads) for
+    memory-efficient inference on iPhone 16 Pro / Pro Max.
+    ~1.1 GB at INT4.
+    """
+    return HermesConfig(
+        vocab_size=32768,
+        hidden_size=2560,
+        intermediate_size=9216,
+        num_layers=26,
+        num_heads=16,
+        num_kv_heads=2,
+        head_dim=160,
+        max_seq_len=8192,
+        rope_theta=10000.0,
+    )
+
+
+# ── DeepSeek-inspired distilled presets ─────────────────────────────────────
+
+def hermes_distilled_1b_config() -> HermesConfig:
+    """Distilled 1B model using DeepSeek-R1 reasoning principles.
+
+    Knowledge distilled from Gemma 3 1B teacher. Maintains the same
+    architecture as hermes-1b but with extended context and tuned
+    for step-by-step reasoning before tool calls.
+    """
+    return HermesConfig(
+        vocab_size=32000,
+        hidden_size=2048,
+        intermediate_size=5632,
+        num_layers=22,
+        num_heads=32,
+        num_kv_heads=4,
+        head_dim=64,
+        max_seq_len=8192,
+        rope_theta=10000.0,
+    )
+
+
 PRESETS = {
     "hermes-1b": hermes_1b_config,
     "hermes-500m": hermes_500m_config,
     "hermes-270m": hermes_270m_config,
+    "gemma-3-1b": gemma_3_1b_config,
+    "gemma-2-2b": gemma_2_2b_config,
+    "hermes-distilled-1b": hermes_distilled_1b_config,
 }
 
 

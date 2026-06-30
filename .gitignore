@@ -1,20 +1,40 @@
+# Environment
+.env
+.env.local
+
 # Python
 __pycache__/
 *.py[cod]
+*.so
 *.egg-info/
 .pytest_cache/
-.venv/
-venv/
+.ruff_cache/
+.mypy_cache/
 
-# Artifacts
-checkpoints/
+# Build artifacts
 dist/
-tokenizer/*.model
-tokenizer/*.vocab
-*.tflite
+build/
+target/
 *.litertlm
-*.task
+*.tflite
 
-# Eval / benchmark outputs
-benchmark_results.json
-eval_results.json
+# Checkpoints
+checkpoints/
+
+# Tokenizer
+tokenizer/
+
+# Node
+node_modules/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+.DS_Store
+
+# HF Space (separate HF repo)
+hf-space/
+
+# Logs
+*.log

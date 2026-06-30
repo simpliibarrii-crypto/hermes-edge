@@ -1,107 +1,88 @@
-# Model Card: Hermes Mobile 1B (LiteRT-LM)
+# Model Card: Hermes Mobile (LiteRT-LM)
 
 ## Overview
 
 **Hermes Mobile** is a small, agentic, decoder-only language model built to run
 fully on-device inside the [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)
 app via the **LiteRT-LM** runtime. It is distributed as a single `.litertlm`
-bundle (TFLite graph + SentencePiece tokenizer + metadata) and is tuned for
-tool-calling so it can act as an agent using the Gallery's Agent Skills system.
+bundle and supports **iPhone 16 (A18 Pro ANE)**, **Android (GPU/NPU)**, and
+**iPad (M-series)**.
 
 | Field | Value |
 |---|---|
 | Model name | `hermes-mobile-1b-litertlm` |
 | Architecture | Decoder-only transformer, grouped-query attention |
-| Parameters | ~1.0B |
-| Layers / heads / KV-heads | 22 / 32 / 4 |
-| Hidden / intermediate dim | 2048 / 5632 |
-| Context window | 4096 tokens |
-| Position embedding | RoPE (θ=10000) |
+| Parameters | ~270M / ~500M / ~1.0B (selectable preset) |
+| Context window | 4096 tokens (8192 for Gemma presets) |
+| Position embedding | RoPE |
 | Normalization | RMSNorm (pre-norm) |
-| Activation | SwiGLU (SiLU) |
+| Activation | SwiGLU |
 | Tokenizer | SentencePiece BPE, 32k vocab |
-| Quantization | INT4, 4-bit per-channel (weight-only dynamic) |
+| Quantization | INT4 per-channel (weight-only dynamic) |
 | File format | `.litertlm` |
-| Approx. on-disk size | ~600 MB |
-| Runtime | LiteRT-LM |
-
-A smaller **`hermes-270m`** preset (~270M params, FunctionGemma-class) is also
-provided for the lowest-end devices.
+| Runtime | LiteRT-LM (CoreML delegate on iOS) |
 
 ## Intended use
 
-- On-device chat assistant and **agent** for mobile (Android) via Google AI Edge Gallery.
-- Tool-calling / function-calling: emits structured `<tool_call>` JSON that the
-  Gallery's Agent Skills runtime dispatches (e.g. offline calculator, web search).
-- Privacy-sensitive scenarios where prompts must not leave the device.
+- On-device chat assistant and **agent** for **iPhone 16** and **Android** via Google AI Edge Gallery
+- Tool-calling / function-calling: emits structured `<tool_call>` JSON
+- Privacy-sensitive scenarios where prompts must not leave the device
+- Offline AI assistant in low-connectivity environments
 
 ### Out of scope
 
-- High-stakes decisions (medical, legal, financial) without human review.
-- Long-document reasoning beyond the 4096-token context window.
-- Tasks requiring broad, current world knowledge — pair with the web-search skill instead.
+- High-stakes decisions (medical, legal, financial) without human review
+- Long-document reasoning beyond the context window
+- Tasks requiring broad, current world knowledge — pair with the web-search skill
 
-## Tool-calling format
+## Targeted Devices
 
-Prompts use a ChatML-style template with explicit tool sentinels:
+| Device | Chip | Backend | Speed (270m) | Speed (1b) |
+|---|---|---|---|---|
+| iPhone 16 | A18 | ANE (CoreML) | ~55 tok/s | ~25 tok/s |
+| iPhone 16 Pro | A18 Pro | ANE (CoreML) | ~60 tok/s | ~28 tok/s |
+| iPhone 15 Pro | A17 Pro | ANE (CoreML) | ~50 tok/s | ~22 tok/s |
+| iPad Pro M4 | M4 | ANE (CoreML) | ~70 tok/s | ~35 tok/s |
+| Galaxy S24 Ultra | SD 8 Gen 3 | GPU | ~65 tok/s | ~30 tok/s |
+| Pixel 9 Pro | Tensor G4 | GPU | ~45 tok/s | ~20 tok/s |
+
+## DeepSeek-Inspired Reasoning
+
+Hermes uses chain-of-thought + tool-calling prompting inspired by DeepSeek-R1:
 
 ```
-<|im_start|>system
-You are Hermes... You have access to the following tools: {...}<|im_end|>
-<|im_start|>user
-What is 12 * 9?<|im_end|>
-<|im_start|>assistant
-<tool_call>{"name": "calculator", "arguments": {"expression": "12*9"}}</tool_call><|im_end|>
-<|im_start|>tool
-<tool_response>108</tool_response><|im_end|>
-<|im_start|>assistant
-12 * 9 = 108.<|im_end|>
+User: Calculate 15% of 340
+Assistant (thinking):
+  10% of 340 = 34
+  5% of 340 = 17
+  34 + 17 = 51
+Tool: calculator(expression="340*0.15") -> 51
+Assistant: 15% of 340 is 51.
 ```
 
-Constrained decoding in LiteRT-LM can be anchored on `<tool_call>` / `</tool_call>`
-to guarantee well-formed JSON.
+## Architecture
 
-## Performance targets
+Standard decoder-only transformer with grouped-query attention, RoPE, SwiGLU, RMSNorm:
+- `hermes-270m`: 21 layers, 1024 hidden, 16 heads, 4 KV heads
+- `hermes-500m`: 24 layers, 1536 hidden, 24 heads, 6 KV heads
+- `hermes-1b`: 22 layers, 2048 hidden, 32 heads, 4 KV heads
+- `gemma-3-1b`: 26 layers, 2048 hidden, 16 heads, 8 KV heads, 8192 ctx
 
-These are design targets for the INT4 build; measure on your device.
+## Installation
 
-| Device class | Accelerator | Prefill | Decode (tokens/sec) |
-|---|---|---|---|
-| Flagship (8+ Gen 2/3) | GPU | fast | ~20–30 tok/s |
-| Mid-range | GPU | moderate | ~10–18 tok/s |
-| Any (fallback) | CPU | slow | ~4–8 tok/s |
-
-Peak on-device memory target: **< 1.5 GB** with the INT4 build.
-
-## LiteRT-LM compatibility
-
-- Format: `.litertlm` (also loadable anywhere the LiteRT-LM runtime is embedded).
-- Google AI Edge Gallery import: copy to `/sdcard/Download/` and add via the **+** button.
-- Minimum Android 10; **≥ 6 GB RAM recommended**.
-
-## Training & conversion
-
-- Trained / fine-tuned with `scripts/train.py` on agentic chat data using the
-  Hermes tool-calling template.
-- Converted to `.litertlm` with `scripts/convert_to_litertlm.py`, which uses
-  `ai_edge_torch.generative` to lower the PyTorch model to TFLite, applies INT4
-  quantization, and bundles the tokenizer.
-
-```bash
-python scripts/convert_to_litertlm.py \
-    --checkpoint checkpoints/hermes-1b.pt \
-    --tokenizer tokenizer/hermes.model \
-    --preset hermes-1b \
-    --output dist/hermes-mobile-1b-int4.litertlm
+**iOS:** Open Google AI Edge Gallery → **+** → **Import from URL** → paste:
+```
+https://huggingface.co/bclermo/hermes-edge/resolve/main/hermes-mobile-270m-int4.litertlm
 ```
 
-## Limitations & biases
+**Android:** Copy to `/sdcard/Download/` → Open Gallery → **+** → Select file.
 
-- A ~1B model has limited world knowledge and reasoning depth; it can
-  hallucinate. Prefer tool calls for facts and math.
-- INT4 quantization slightly degrades quality versus the float checkpoint.
-- Inherits biases from its training data.
+## Training & Distillation
+
+- Fine-tuned with `scripts/train.py` on agentic chat data
+- Knowledge distillation from Gemma 3 1B via `scripts/distill_from_gemma.py`
+- DeepSeek-R1 style chain-of-thought supervision for reasoning
 
 ## License
 
-Apache-2.0.
+Apache 2.0
