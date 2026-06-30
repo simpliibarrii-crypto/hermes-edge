@@ -1,10 +1,17 @@
 """
 Hermes Edge CLI — interactive agent with intent routing, web search, and calculator.
+
+ChatGPT-5.5-level smoothness features:
+  --effort low|medium|high  adaptive reasoning effort (like GPT-5.5 reasoning_effort)
+  --stream                  progressive token-by-token streaming
+  Response cache             instant re-query for repeated questions
+  Intent tag                 shows [chat]/[reasoning]/[tools] immediately (~5μs)
 """
 
 import argparse
 import logging
 import sys
+import time
 from pathlib import Path
 
 from hermes.rag import RAGEngine
@@ -16,6 +23,13 @@ logging.basicConfig(
     datefmt="%H:%M:%S",
 )
 log = logging.getLogger("hermes")
+
+INTENT_TAGS = {
+    "chat": "\033[36m[chat]\033[0m ",
+    "reasoning": "\033[33m[reasoning]\033[0m ",
+    "tools": "\033[32m[tools]\033[0m ",
+}
+CLEAR_LINE = "\033[K"
 
 
 def main():
@@ -60,13 +74,37 @@ def main():
         default="",
         help="Path to RAG database (enables knowledge retrieval)",
     )
+    parser.add_argument(
+        "--effort",
+        default="medium",
+        choices=["low", "medium", "high"],
+        help="Reasoning effort (like GPT-5.5 reasoning_effort): low=fast, medium=balanced, high=deep",
+    )
+    parser.add_argument(
+        "--stream",
+        action="store_true",
+        help="Stream tokens progressively (like ChatGPT)",
+    )
+    parser.add_argument(
+        "--no-cache",
+        action="store_true",
+        help="Disable response cache",
+    )
     args = parser.parse_args()
 
     from hermes.litert_model import LiteRTModel
-    from hermes.agent import HermesAgent, AgentConfig, ModelManager
+    from hermes.agent import (
+        HermesAgent, AgentConfig, ModelManager,
+        REASONING_EFFORT_LOW, REASONING_EFFORT_MEDIUM, REASONING_EFFORT_HIGH,
+    )
     from hermes.router import INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
 
-    config = AgentConfig(enable_routing=not args.no_routing)
+    config = AgentConfig(
+        enable_routing=not args.no_routing,
+        reasoning_effort=args.effort,
+        enable_streaming=args.stream,
+        enable_response_cache=not args.no_cache,
+    )
 
     model_path = Path(args.model)
     if not model_path.exists():
@@ -113,15 +151,18 @@ def main():
     agent_memory = AgentMemory()
 
     if args.server:
-        run_openai_server(args, agent_memory, rag)
+        run_openai_server(args, agent, agent_memory, rag)
         return
     else:
         _run_interactive(agent)
 
 
 def _run_interactive(agent):
+    mode = "STREAM" if agent.config.enable_streaming else "BATCH"
+    cache_status = "ON" if agent.config.enable_response_cache else "OFF"
     print("Hermes Edge — interactive mode (Ctrl+D to exit)")
     print(f"  Routing: {'ON' if agent.config.enable_routing else 'OFF'}")
+    print(f"  Effort:  {agent.config.reasoning_effort}  |  Mode: {mode}  |  Cache: {cache_status}")
     print()
 
     while True:
@@ -137,8 +178,10 @@ def _run_interactive(agent):
             break
 
         try:
-            response = agent.run(user_input)
-            print(response)
+            if agent.config.enable_streaming:
+                _run_streaming(agent, user_input)
+            else:
+                _run_batch(agent, user_input)
         except Exception as exc:
             log.error("Error: %s", exc)
             print(f"Error: {exc}")
@@ -149,53 +192,43 @@ def _run_interactive(agent):
     log.info("Session summary: %s", summary)
 
 
-def _run_server(agent, port: int):
-    try:
-        from fastapi import FastAPI
-        from pydantic import BaseModel
-        import uvicorn
-    except ImportError:
-        log.error("Server mode requires fastapi and uvicorn: pip install fastapi uvicorn")
-        sys.exit(1)
+def _run_batch(agent, user_input: str) -> None:
+    """Non-streaming batch response with timing."""
+    start = time.perf_counter()
+    response = agent.run(user_input)
+    elapsed = (time.perf_counter() - start) * 1000
 
-    app = FastAPI(title="Hermes Edge", version="0.2.0")
-
-    class ChatRequest(BaseModel):
-        message: str
-        context: str | None = None
-
-    class ChatResponse(BaseModel):
-        response: str
-        intent: str = ""
-        model: str = ""
-        latency_ms: float = 0.0
-
-    @app.post("/chat", response_model=ChatResponse)
-    def chat(req: ChatRequest):
-        start = __import__("time").time()
-        resp = agent.run(req.message, context=req.context)
-        elapsed = (__import__("time").time() - start) * 1000
-        turn = agent.conversation.turns[-1] if agent.conversation.turns else None
-        return ChatResponse(
-            response=resp,
-            intent=turn.intent if turn else "",
-            model=turn.model_used if turn else "",
-            latency_ms=elapsed,
-        )
-
-    @app.get("/health")
-    def health():
-        return {"status": "ok", "routing": agent.config.enable_routing}
-
-    log.info("Starting server on port %d", port)
-    uvicorn.run(app, host="0.0.0.0", port=port)
+    if response:
+        print(response)
+    if elapsed > 100:
+        print(f"\033[90m({elapsed:.0f}ms)\033[0m")
 
 
-def run_openai_server(args, agent_memory, rag):
+def _run_streaming(agent, user_input: str) -> None:
+    """Streaming response: shows intent tag immediately, then tiles tokens."""
+    first = True
+    for part in agent.run_stream(user_input):
+        if first:
+            intent_tag = INTENT_TAGS.get(part.strip("[] "), "")
+            if part in ("[chat] ", "[reasoning] ", "[tools] "):
+                print(f"{intent_tag}", end="", flush=True)
+            else:
+                print(part, end="", flush=True)
+            first = False
+        else:
+            print(part, end="", flush=True)
+    print()
+
+
+def run_openai_server(args, agent, agent_memory, rag):
     from http.server import HTTPServer, BaseHTTPRequestHandler
     import json, time
 
     class OpenAIHandler(BaseHTTPRequestHandler):
+        server_agent = None  # set from outer scope
+        server_memory = None
+        server_rag = None
+
         def do_POST(self):
             path = self.path
             length = int(self.headers.get("Content-Length", 0))
@@ -205,28 +238,51 @@ def run_openai_server(args, agent_memory, rag):
                 messages = body.get("messages", [])
                 stream = body.get("stream", False)
                 model_name = args.model.split("/")[-1].replace(".litertlm", "")
-                response = {
-                    "id": "chatcmpl-hermes",
-                    "object": "chat.completion",
-                    "created": int(time.time()),
-                    "model": model_name,
-                    "choices": [
-                        {
-                            "index": 0,
-                            "message": {"role": "assistant", "content": "Hermes Edge running in OpenAI-compatible mode. Connect a model to use."},
-                            "finish_reason": "stop",
-                        }
-                    ],
-                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
-                }
+                user_input = messages[-1]["content"] if messages else ""
+
                 if stream:
                     self.send_response(200)
                     self.send_header("Content-Type", "text/event-stream")
+                    self.send_header("Cache-Control", "no-cache")
                     self.end_headers()
-                    chunk = {"id": "chatcmpl-hermes", "object": "chat.completion.chunk", "created": int(time.time()), "model": model_name, "choices": [{"index": 0, "delta": {"content": "Hermes Edge ready.\n"}, "finish_reason": "stop"}]}
-                    self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+
+                    for chunk_text in self.server_agent.run_stream(user_input):
+                        delta = chunk_text
+                        chunk = {
+                            "id": "chatcmpl-hermes",
+                            "object": "chat.completion.chunk",
+                            "created": int(time.time()),
+                            "model": model_name,
+                            "choices": [{"index": 0, "delta": {"content": delta}, "finish_reason": None}],
+                        }
+                        self.wfile.write(f"data: {json.dumps(chunk)}\n\n".encode())
+                        self.wfile.flush()
+
+                    final = {
+                        "id": "chatcmpl-hermes",
+                        "object": "chat.completion.chunk",
+                        "created": int(time.time()),
+                        "model": model_name,
+                        "choices": [{"index": 0, "delta": {}, "finish_reason": "stop"}],
+                    }
+                    self.wfile.write(f"data: {json.dumps(final)}\n\n".encode())
                     self.wfile.write(b"data: [DONE]\n\n")
                 else:
+                    response_text = self.server_agent.run(user_input)
+                    response = {
+                        "id": "chatcmpl-hermes",
+                        "object": "chat.completion",
+                        "created": int(time.time()),
+                        "model": model_name,
+                        "choices": [
+                            {
+                                "index": 0,
+                                "message": {"role": "assistant", "content": response_text},
+                                "finish_reason": "stop",
+                            }
+                        ],
+                        "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                    }
                     self.send_response(200)
                     self.send_header("Content-Type", "application/json")
                     self.end_headers()
@@ -247,10 +303,15 @@ def run_openai_server(args, agent_memory, rag):
         def log_message(self, format, *args):
             log.info("HTTP: %s", format % args)
 
+    OpenAIHandler.server_agent = agent
+    OpenAIHandler.server_memory = agent_memory
+    OpenAIHandler.server_rag = rag
+
     server = HTTPServer(("0.0.0.0", args.port), OpenAIHandler)
     log.info("OpenAI-compatible API server on http://0.0.0.0:%d/v1", args.port)
     log.info("  GET  /v1/models")
-    log.info("  POST /v1/chat/completions")
+    log.info("  POST /v1/chat/completions  (stream=True supported)")
+    log.info("  Effort: %s | Cache: %s", args.effort, "ON" if not args.no_cache else "OFF")
     try:
         server.serve_forever()
     except KeyboardInterrupt:

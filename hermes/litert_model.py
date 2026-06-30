@@ -1,6 +1,8 @@
 import logging
 import subprocess
+import time
 from pathlib import Path
+from typing import Iterator
 
 log = logging.getLogger(__name__)
 
@@ -124,6 +126,71 @@ class LiteRTModel:
             log.warning("Model inference error: %s", exc)
 
         return self._simulate_response(prompt)
+
+    def generate_stream(
+        self,
+        prompt: str,
+        max_tokens: int = 256,
+        temperature: float = 0.6,
+        top_k: int = 40,
+    ) -> Iterator[str]:
+        """Stream tokens one at a time (progressive rendering like ChatGPT)."""
+        if not self._loaded:
+            yield "Error: Model not loaded."
+            return
+
+        try:
+            cmd = [
+                self.cli_path,
+                "run",
+                str(self.model_path),
+                "--prompt",
+                prompt,
+                "--max_tokens",
+                str(max_tokens),
+                "--temperature",
+                str(temperature),
+                "--top_k",
+                str(top_k),
+                "--stream",
+            ]
+
+            if self.backend != "auto":
+                cmd.extend(["--backend", self.backend])
+
+            if self.enable_mtp:
+                cmd.append("--enable_mtp")
+
+            proc = subprocess.Popen(
+                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                text=True, bufsize=1,
+            )
+
+            for line in iter(proc.stdout.readline, ""):
+                line = line.strip()
+                if line:
+                    yield line + " "
+                if proc.poll() is not None:
+                    break
+            proc.stdout.close()
+
+            if proc.returncode and proc.returncode != 0:
+                yield from self._simulate_stream(prompt)
+
+        except FileNotFoundError:
+            log.warning("litert-lm CLI not available, using simulated stream")
+            yield from self._simulate_stream(prompt)
+        except Exception as exc:
+            log.warning("Stream error: %s", exc)
+            yield from self._simulate_stream(prompt)
+
+    def _simulate_stream(self, prompt: str) -> Iterator[str]:
+        """Simulate streaming tokens for demo/testing."""
+        text = self._simulate_response(prompt)
+        words = text.split()
+        for i, word in enumerate(words):
+            yield word + (" " if i < len(words) - 1 else "")
+            time.sleep(0.02)  # ~50 tok/s simulated
 
     def _simulate_response(self, prompt: str) -> str:
         prompt_lower = prompt.lower()

@@ -2,7 +2,7 @@
 Hermes Edge — Package Init
 """
 
-__version__ = "0.2.0"
+__version__ = "0.2.1"
 __author__ = "Barry Clerjuste"
 __email__ = "bclerjuste@gmail.com"
 
@@ -16,9 +16,14 @@ from hermes.rag import RAGEngine
 from hermes.memory import AgentMemory
 from hermes.mcp_server import MCPServer
 from hermes.mcp_client import MCPManager
-from hermes.code_executor import CodeExecutor
+from hermes.code_executor import CodeExecutor, ExecutionResult
 
 try:
-    from hermes.agent import HermesAgent, AgentConfig, ModelManager
+    from hermes.agent import (
+        HermesAgent, AgentConfig, ModelManager,
+        ResponseCache, AgentTurn, Conversation,
+        REASONING_EFFORT_LOW, REASONING_EFFORT_MEDIUM, REASONING_EFFORT_HIGH,
+        REASONING_EFFORTS,
+    )
 except ImportError:
     pass
