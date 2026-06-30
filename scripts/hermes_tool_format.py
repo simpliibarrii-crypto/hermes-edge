@@ -40,10 +40,10 @@ class ToolResult:
     success: bool = True
 
 
-TOOL_CALL_START = "<tool_call>"
-TOOL_CALL_END = "</tool_call>"
-TOOL_RESPONSE_START = "<tool_response>"
-TOOL_RESPONSE_END = "</tool_response>"
+from hermes.chat_template import (
+    TOOL_CALL_START, TOOL_CALL_END, TOOL_RESPONSE_START, TOOL_RESPONSE_END,
+    IM_START, IM_END, build_prompt as canonical_build_prompt,
+)
 
 
 class HermesToolFormatter:
@@ -121,13 +121,8 @@ class HermesToolFormatter:
 
     @staticmethod
     def _format_chatml(messages: list[dict]) -> str:
-        im_start = "<|im_start|>"
-        im_end = "<|im_end|>"
-        parts = []
-        for msg in messages:
-            parts.append(f"{im_start}{msg['role']}\n{msg['content']}{im_end}\n")
-        parts.append(f"{im_start}assistant\n")
-        return "".join(parts)
+        msgs = [Message(role=m["role"], content=m["content"]) for m in messages]
+        return canonical_build_prompt(msgs, add_generation_prompt=True)
 
 
 class ToolRegistry:

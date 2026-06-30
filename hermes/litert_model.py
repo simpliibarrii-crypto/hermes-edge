@@ -1,8 +1,5 @@
-import json
 import logging
-import os
 import subprocess
-import tempfile
 from pathlib import Path
 
 log = logging.getLogger(__name__)
@@ -16,6 +13,7 @@ class LiteRTModel:
         self.model_path = Path(model_path).resolve()
         self.cli_path = cli_path
         self.backend = backend
+        self.enable_mtp = True
         self.vocab_size = 32000
         self.tokenizer = None
         self._loaded = False
@@ -84,7 +82,7 @@ class LiteRTModel:
         self,
         prompt: str,
         max_tokens: int = 256,
-        temperature: float = 0.7,
+        temperature: float = 0.6,
         top_k: int = 40,
     ) -> str:
         if not self._loaded:
@@ -99,17 +97,19 @@ class LiteRTModel:
                 prompt,
                 "--max_tokens",
                 str(max_tokens),
+                "--temperature",
+                str(temperature),
+                "--top_k",
+                str(top_k),
             ]
 
             if self.backend != "auto":
                 cmd.extend(["--backend", self.backend])
 
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=60,
-            )
+            if self.enable_mtp:
+                cmd.append("--enable_mtp")
+
+            result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
             if result.returncode == 0 and result.stdout.strip():
                 return result.stdout.strip()
 
@@ -125,66 +125,24 @@ class LiteRTModel:
 
         return self._simulate_response(prompt)
 
-    def predict_next_token(self, context: list[int]) -> int:
-        if not self._loaded:
-            return 0
-        try:
-            text = self._decode_tokens(context)
-            cmd = [
-                self.cli_path,
-                "run",
-                str(self.model_path),
-                "--prompt",
-                text[-200:],
-                "--max_tokens",
-                "1",
-                "--temperature",
-                "0.0",
-            ]
-            if self.backend != "auto":
-                cmd.extend(["--backend", self.backend])
-
-            result = subprocess.run(
-                cmd,
-                capture_output=True,
-                text=True,
-                timeout=30,
-            )
-            if result.returncode == 0 and result.stdout.strip():
-                return hash(result.stdout.strip()) % self.vocab_size
-        except Exception:
-            pass
-        return context[-1] if context else 0
-
-    @staticmethod
-    def _decode_tokens(token_ids: list[int]) -> str:
-        return "".join(chr(max(32, min(126, t % 128))) for t in token_ids[-50:])
-
     def _simulate_response(self, prompt: str) -> str:
         prompt_lower = prompt.lower()
         if "hello" in prompt_lower or "hi" in prompt_lower:
-            return "Hello! I'm Hermes Edge, running on-device. How can I help?"
+            return "<think>Greeting detected.</think>\nHey! I'm Hermes, ready to help. What's up?"
         if "tool" in prompt_lower or "function" in prompt_lower:
             return (
-                "<think>The user is asking about tool calling. "
-                "I can use calculator, web search, memory, and timer tools.</think>\n\n"
-                "I support function calling. Available tools:\n"
-                "- calculator: evaluate math expressions\n"
-                "- web_search: search the web (requires network)\n"
-                "- memory: store and recall information\n"
-                "- timer: set timers"
+                "<think>They're asking about tools. Quick overview.</think>\n"
+                "I've got calculator, web search, memory, and timer tools. "
+                "Just tell me what you need."
             )
         if "reason" in prompt_lower or "deep" in prompt_lower:
             return (
-                "<think>Applying DeepSeek-style reasoning. "
-                "Breaking down the question step by step. "
-                "Verifying each step.</think>\n\n"
-                "Based on my reasoning, here's my answer."
+                "<think>Breaking it down.</think>\n"
+                "Here's what I figure: answer's right there after working through it step by step."
             )
         return (
-            f"<think>Processing query using {self.model_path.name} "
-            f"on LiteRT-LM runtime ({self.backend or 'auto'} backend).</think>\n\n"
-            f"I received your message. I'm running fully offline as a {self.model_path.stem} model."
+            f"<think>Processing via {self.model_path.stem} ({self.backend}).</think>\n"
+            f"Heard you: \"{prompt[:80]}\". Running offline and ready."
         )
 
     def get_metadata(self) -> dict:
