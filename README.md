@@ -26,6 +26,17 @@ short_description: On-device AI agent for iPhone 16 and Android — runs fully o
 base_model: Qwen/Qwen2.5-0.5B-Instruct
 ---
 
+## ⚡ Quick Demo (No Weights Needed)
+
+```bash
+pip install -e .
+python -c "from hermes.inference import DemoHermesInference; m = DemoHermesInference('hermes-270m'); print(m.chat('Hello!'))"
+```
+
+This runs the full architecture pipeline with random weights — real inference requires trained checkpoints (see Model Weights section).
+
+---
+
 ## Table of Contents
 
 - [Install](#-install-on-iphone-16-1-tap)

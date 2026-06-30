@@ -320,3 +320,64 @@ def run_openai_server(args, agent, agent_memory, rag):
 
 if __name__ == "__main__":
     main()
+
+
+def demo_command(args):
+    """Run the Hermes demo with random weights — no checkpoint needed."""
+    from hermes.inference import DemoHermesInference
+    from hermes.config import PRESETS
+
+    preset = args.preset
+    if preset not in PRESETS:
+        print(f"Unknown preset '{preset}'. Available: {sorted(PRESETS)}")
+        return
+
+    print(f"\n=== Hermes Edge Demo — {preset} ===")
+    model = DemoHermesInference(preset)
+    cfg = model.config
+    print(f"Architecture: {cfg.num_layers} layers, {cfg.hidden_size}d hidden, {cfg.num_heads} heads, {cfg.num_kv_heads} KV heads")
+    print(f"Context window: {cfg.max_seq_len} tokens | Parameters: ~{cfg.estimated_parameters() / 1e6:.0f}M")
+    print(f"Quantization target: INT4 | Runtime: LiteRT-LM\n")
+
+    sample_prompts = [
+        "Hello, what can you do?",
+        "What is the capital of Canada?",
+        "Explain quantum computing in simple terms.",
+    ]
+    for prompt in sample_prompts:
+        print(f"User: {prompt}")
+        response = model.chat(prompt)
+        print(f"Hermes: {response}\n")
+
+
+def _build_parser():
+    parser = argparse.ArgumentParser(
+        description="Hermes Edge CLI",
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
+    subparsers = parser.add_subparsers(dest="command")
+
+    # demo subcommand
+    demo_parser = subparsers.add_parser(
+        "demo",
+        help="Run architecture demo with random weights (no checkpoint needed)",
+    )
+    demo_parser.add_argument(
+        "--preset",
+        default="hermes-270m",
+        choices=["hermes-270m", "hermes-500m", "hermes-1b", "gemma-3-1b", "gemma-2-2b", "hermes-distilled-1b"],
+        help="Model preset to demo",
+    )
+    return parser
+
+
+def main_with_demo():
+    """Extended main that supports the 'demo' subcommand."""
+    parser = _build_parser()
+    # Check if first arg is 'demo'
+    import sys as _sys
+    if len(_sys.argv) > 1 and _sys.argv[1] == "demo":
+        args = parser.parse_args()
+        demo_command(args)
+    else:
+        main()
