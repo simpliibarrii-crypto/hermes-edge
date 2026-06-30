@@ -15,7 +15,8 @@ __pycache__/
 dist/
 build/
 target/
-*.litertlm
+# Allow model files in dist/ for HF upload
+!dist/*.litertlm
 *.tflite
 
 # Checkpoints

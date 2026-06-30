@@ -1,0 +1,61 @@
+[build-system]
+requires = ["setuptools>=70.0"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "hermes-edge"
+version = "0.2.0"
+description = "On-device AI agent for iPhone 16 + Android — LiteRT-LM with DeepSeek reasoning, Hermes tool calling, DSpark speculative decoding"
+authors = [
+    { name = "Barry Clerjuste", email = "bclerjuste@gmail.com" },
+]
+license = { text = "Apache-2.0" }
+readme = "README.md"
+requires-python = ">=3.11"
+keywords = [
+    "hermes-edge", "mobile-ai", "on-device", "litert-lm",
+    "deepseek", "dspark", "speculative-decoding",
+    "ai-agent", "iphone-16", "apple-neural-engine",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Programming Language :: Python :: 3.11",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Software Development :: Embedded Systems",
+]
+
+dependencies = [
+    "litert-lm>=0.13.0",
+    "litert-torch>=0.9.0",
+    "torch>=2.4.0",
+    "transformers>=4.44.0",
+    "sentencepiece>=0.2.0",
+    "numpy>=1.26.0",
+    "tqdm>=4.66.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+    "ruff>=0.5.0",
+    "gradio>=5.0.0",
+    "httpx>=0.27.0",
+]
+
+[project.urls]
+Homepage = "https://huggingface.co/bclermo/hermes-edge"
+Source = "https://github.com/simpliibarrii-crypto/hermes-edge"
+HuggingFace = "https://huggingface.co/bclermo/hermes-edge"
+Documentation = "https://huggingface.co/spaces/bclermo/hermes-edge"
+
+[tool.setuptools.packages.find]
+include = ["hermes*"]
+
+[tool.ruff]
+target-version = "py311"
+line-length = 100
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

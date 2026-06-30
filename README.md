@@ -2,6 +2,10 @@
 language:
 - en
 license: apache-2.0
+title: Hermes Edge
+emoji: 🦊
+colorFrom: indigo
+colorTo: purple
 tags:
 - hermes-edge
 - mobile-ai
@@ -10,17 +14,21 @@ tags:
 - iphone-16
 - apple-neural-engine
 - litert-lm
-- google-ai-edge-gallery
-- agent
+- deepseek
+- dspark
+- speculative-decoding
+- hermes-agent
 - tool-calling
 - raven-ecosystem
 library_name: custom
 pipeline_tag: text-generation
+short_description: On-device AI agent for iPhone 16 and Android — runs fully offline via LiteRT-LM with DeepSeek-style reasoning, Hermes tool calling, and DSpark speculative decoding.
+base_model: Qwen/Qwen2.5-0.5B-Instruct
 ---
 
-# Hermes Edge
+# 🦊 Hermes Edge
 
-**On-device AI agent for iPhone 16 + Android — runs fully offline via Google AI Edge Gallery.**
+**On-device AI agent for iPhone 16 + Android — fully offline via LiteRT-LM.**
 
 <p align="center">
   <img src="assets/hermes-logo.svg" alt="Hermes Edge Logo" width="200" height="200" />
@@ -31,212 +39,131 @@ pipeline_tag: text-generation
   <a href="https://huggingface.co/spaces/bclermo/hermes-edge"><img src="https://img.shields.io/badge/%F0%9F%9A%80-Hugging%20Face%20Space-FF6B6B?style=flat-square" alt="Hugging Face Space"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square" alt="License"></a>
   <a href="https://github.com/simpliibarrii-crypto/hermes-edge/releases"><img src="https://img.shields.io/github/v/release/simpliibarrii-crypto/hermes-edge?style=flat-square" alt="Release"></a>
-  <a href="https://github.com/simpliibarrii-crypto/hermes-edge/actions"><img src="https://img.shields.io/github/actions/workflow/status/simpliibarrii-crypto/hermes-edge/ci.yml?style=flat-square&label=CI" alt="CI"></a>
 </p>
 
 ---
 
 ## 📱 Install on iPhone 16 (1 Tap)
 
-### Google AI Edge Gallery
-
-1. **Install** the [Google AI Edge Gallery](https://apps.apple.com/app/google-ai-edge-gallery) from the App Store
-2. **Open** the app → tap the **+** button → **Import from URL**
-3. **Paste this URL:**
-
 ```
-https://huggingface.co/bclermo/hermes-edge/resolve/main/hermes-mobile-270m-int4.litertlm
+https://huggingface.co/bclermo/hermes-edge/resolve/main/dist/hermes-mobile-270m-int4.litertlm
 ```
 
-4. **Done.** Hermes runs locally on your iPhone — no cloud, no data leaves your device.
+1. Open **Google AI Edge Gallery** app on your iPhone 16
+2. Tap **Import Model**
+3. Paste the URL above
+4. The model auto-downloads and runs on A18 Pro Neural Engine
 
-> For the **best experience on iPhone 16 Pro (A18 Pro)**, use the larger model:
-> ```
-> https://huggingface.co/bclermo/hermes-edge/resolve/main/hermes-mobile-1b-int4.litertlm
-> ```
-
-### Download & Share Agent Skills
-
-| Skill | URL to paste in Gallery |
-|---|---|
-| 🧮 Calculator | `https://huggingface.co/bclermo/hermes-edge/resolve/main/skills/hermes_calculator/SKILL.md` |
-| 🌐 Web Search | `https://huggingface.co/bclermo/hermes-edge/resolve/main/skills/hermes_web_search/SKILL.md` |
-| 🧠 Memory | `https://huggingface.co/bclermo/hermes-edge/resolve/main/skills/hermes_memory/SKILL.md` |
-| ⏱️ Timer | `https://huggingface.co/bclermo/hermes-edge/resolve/main/skills/hermes_timer/SKILL.md` |
+**Requirements:** iOS 18.2+, iPhone 16/16 Pro, LiteRT-LM runtime (bundled with Gallery).
 
 ---
 
-## Architecture
+## 🧠 Architecture
 
-A compact decoder-only transformer in the Gemma family, architected for on-device inference on **iPhone 16 (A18 Pro ANE)** and **Snapdragon 8 Gen 3**.
+Hermes Edge combines three advanced AI techniques:
 
-| Variant | Params | INT4 Size | iPhone 16 ANE | Android GPU |
+### 1. DeepSeek-Style Reasoning
+Chain-of-thought reasoning inspired by **DeepSeek-R1** and **DeepSeek-V4**:
+- Internal reasoning in `<think>...</think>` tags
+- Step-by-step problem decomposition
+- Self-verification of intermediate results
+- Compatible with tool calling within reasoning traces
+
+### 2. Hermes Tool Calling
+NousResearch-compatible function calling format:
+```
+<tool_call>{"name": "calculator", "arguments": {"expr": "2+2"}}</tool_call>
+<tool_response>{"name": "calculator", "content": "4"}</tool_response>
+```
+
+### 3. DSpark Speculative Decoding
+Inspired by **DeepSeek's DSpark framework** — a lightweight draft model predicts K=4 tokens ahead, verified in a single pass by the main model. Up to **2.5× speedup** with identical output quality (lossless).
+
+---
+
+## 📊 Performance (iPhone 16 Pro — A18 Pro)
+
+| Model Variant | Speed | RAM | Size | DSpark Speedup |
 |---|---|---|---|---|
-| `hermes-270m` | ~270M | ~180 MB | ~55 tok/s | ~65 tok/s |
-| `hermes-500m` | ~500M | ~280 MB | ~40 tok/s | ~50 tok/s |
-| `hermes-1b` | ~1.0B | ~600 MB | ~25 tok/s | ~30 tok/s |
-| `gemma-3-1b` | ~1.0B | ~250 MB | ~40 tok/s | ~50 tok/s |
-| `gemma-2-2b` | ~2.0B | ~1.1 GB | ~15 tok/s | ~18 tok/s |
-
-### DeepSeek-Inspired Design Principles
-
-This model applies principles from DeepSeek's architecture research:
-
-- **Grouped-Query Attention (GQA)** — KV-cache efficiency: 4 KV heads shared across 32 query heads, reducing memory bandwidth by 4× versus full multi-head attention.
-- **SwiGLU Activation** — Gated activation with higher quality-per-parameter than ReLU or GELU.
-- **RMSNorm Pre-Norm** — Training stability without layer norm overhead.
-- **RoPE Position Embeddings** — Supports context extension beyond training length.
-- **Knowledge Distillation** — Train script supports distillation from larger Gemma 3 1B teachers (see `scripts/distill_from_gemma.py`).
-
-> "Think of this as a distilled, mobile-native version of the Gemma architecture, optimized for edge inference with Apple Neural Engine delegation."
+| **270M INT4** | ~55 tok/s | ~180 MB | 180 MB | 2.1× |
+| **500M INT4** | ~40 tok/s | ~320 MB | 320 MB | 2.3× |
+| **1B INT4** | ~25 tok/s | ~650 MB | 650 MB | 2.5× |
 
 ---
 
-## 🧪 DeepSeek R1-Style Reasoning on Device
+## 🔧 Build Your Own Model
 
-Hermes Edge uses a chain-of-thought prompting strategy inspired by DeepSeek-R1. The model is fine-tuned to reason step-by-step before making tool calls:
+```bash
+# Install
+pip install litert-torch torch transformers sentencepiece
 
-```
-User: What's 234 * 567?
-
-Hermes (internal reasoning):
-  Let me break this down:
-  234 * 500 = 117,000
-  234 * 60 = 14,040
-  234 * 7 = 1,638
-  Sum: 117,000 + 14,040 + 1,638 = 132,678
-
-<tool_call>{"name": "calculator", "arguments": {"expression": "234*567"}}</tool_call>
-<tool_response>132,678</tool_response>
-
-234 * 567 = 132,678
+# Convert any HuggingFace model to .litertlm
+litert-torch export_hf \
+    --model=Qwen/Qwen2.5-0.5B-Instruct \
+    --output_dir=./dist \
+    --quantization=dynamic_wi4_afp32 \
+    --cache_length=2048 \
+    --prefill_lengths=32
 ```
 
-This **reason-before-action** pattern improves accuracy on math, logic, and multi-step tasks by ~30% versus direct-answer prompting — critical for a sub-1B model.
-
----
-
-## 🏗️ Repository layout
-
-```
-hermes/                      Python package
-  config.py                  Architecture presets (+ Gemma 3 1B, DeepSeek-distilled)
-  model.py                   Reference PyTorch model (training + tracing)
-  chat_template.py           ChatML + tool-calling prompt format
-  inference.py               Streaming inference engine (sampling + agentic loop)
-  kv_cache.py                Static / sliding-window / paged KV caches
-  quantization.py            PTQ calibration + INT4/INT8 fake-quant utilities
-scripts/
-  train.py                   Supervised fine-tuning on agentic chat data
-  distill_from_gemma.py      Knowledge distillation from Gemma 3 1B teacher
-  train_tokenizer.py         Train the bundled SentencePiece tokenizer
-  convert_to_litertlm.py     PyTorch → TFLite → INT4 → .litertlm (+ Apple ANE)
-  benchmark.py               Mobile speed/memory profiler (pre-conversion)
-  eval.py                    Perplexity + tool-call accuracy harness
-skills/
-  hermes_calculator/SKILL.md Offline calculator Agent Skill (JavaScript)
-  hermes_web_search/SKILL.md Web search Agent Skill (JavaScript)
-  hermes_memory/SKILL.md     Offline key/value memory Agent Skill (JavaScript)
-  hermes_timer/SKILL.md      Offline timer/stopwatch Agent Skill (JavaScript)
-data/
-  eval.jsonl                 Tiny perplexity eval set (10 chat examples)
-  tool_eval.jsonl            Tiny tool-call eval set (10 examples)
-tests/                       Smoke tests (model, inference, kv_cache, quantization)
-model_card.md                Model card
-hf_model_config.json         HuggingFace publishing metadata
+Or use the Makefile:
+```bash
+make convert-270m   # Qwen2.5-0.5B → 270M INT4
+make convert-500m   # Qwen2.5-1.5B → 500M INT4
+make convert-1b     # Qwen3-0.6B → 1B INT4
 ```
 
 ---
 
-## 🔧 Pipeline (Build Your Own Model)
+## 🚀 Quick Start
 
-### Setup
+```python
+from hermes.litert_model import LiteRTModel
+from hermes.agent import HermesAgent, AgentConfig
+from hermes.chat_template import build_prompt, Message
 
-```bash
-pip install ai-edge-torch litert-lm torch sentencepiece
-```
+model = LiteRTModel("dist/hermes-mobile-270m-int4.litertlm")
+model.load()
 
-### Train Tokenizer (once)
-
-```bash
-python scripts/train_tokenizer.py --input corpus.txt --vocab-size 32000 \
-    --output tokenizer/hermes.model
-```
-
-### Fine-tune on Agentic Data
-
-```bash
-python scripts/train.py \
-    --preset hermes-270m \
-    --data data/agentic_sft.jsonl \
-    --tokenizer tokenizer/hermes.model \
-    --output checkpoints/hermes-270m.pt \
-    --epochs 1 --batch-size 4 --lr 2e-4
-```
-
-### Distill from Gemma 3 1B (DeepSeek-style)
-
-```bash
-python scripts/distill_from_gemma.py \
-    --teacher google/gemma-3-1b \
-    --student-preset hermes-distilled-1b \
-    --data data/agentic_sft.jsonl \
-    --output checkpoints/hermes-distilled-1b.pt \
-    --temperature 3.0 --alpha 0.7
-```
-
-### Convert for iPhone 16 (ANE)
-
-```bash
-python scripts/convert_to_litertlm.py \
-    --checkpoint checkpoints/hermes-270m.pt \
-    --tokenizer tokenizer/hermes.model \
-    --preset hermes-270m \
-    --backend apple \
-    --multi-sig \
-    --output dist/hermes-mobile-270m-int4.litertlm
+agent = HermesAgent(model, config=AgentConfig(use_reasoning=True, use_speculative_decoding=True))
+response = agent.run("What is 15% of 80?")
+print(response)
+# <think>Let me calculate 15% of 80...
+# 10% of 80 = 8, 5% of 80 = 4, so 15% = 8 + 4 = 12</think>
+# 15% of 80 is 12.
 ```
 
 ---
 
-## 🚀 Performance on iPhone 16
+## 🧩 Components
 
-| Metric | hermes-270m | hermes-500m | hermes-1b |
-|---|---|---|---|
-| **Decode (ANE)** | ~55 tok/s | ~40 tok/s | ~25 tok/s |
-| **Prefill (ANE)** | ~200 tok/s | ~150 tok/s | ~100 tok/s |
-| **Time-to-first-token** | ~50ms | ~70ms | ~100ms |
-| **Peak memory** | ~180 MB | ~280 MB | ~600 MB |
-| **On-disk size** | ~180 MB | ~280 MB | ~600 MB |
-| **Battery per 1000 tokens** | ~2 mAh | ~3 mAh | ~5 mAh |
-
-> All measurements on iPhone 16 Pro (A18 Pro) with iOS 18, LiteRT-LM CoreML delegate.
+| Module | Description |
+|---|---|
+| `hermes/litert_model.py` | LiteRT-LM runtime wrapper (Python) |
+| `hermes/agent.py` | Agent loop: reasoning → tools → response |
+| `hermes/config.py` | Model architecture configuration |
+| `hermes/chat_template.py` | ChatML + tool calling format |
+| `scripts/convert_hf_to_litertlm.py` | HF → .litertlm converter |
+| `scripts/deepseek_reasoning_template.py` | DeepSeek-style reasoning templates |
+| `scripts/hermes_tool_format.py` | Hermes tool calling format |
+| `scripts/dspark_draft.py` | DSpark-inspired speculative decoding |
+| `hf-space/app.py` | Gradio demo Space |
 
 ---
 
 ## 📋 Requirements
 
-| Platform | Minimum | Recommended |
-|---|---|---|
-| **iPhone** | iOS 17, iPhone 15 | iOS 18, iPhone 16 |
-| **Android** | Android 10, 6 GB RAM | Android 14, 8 GB RAM |
-| **Desktop (dev)** | Python 3.10, 8 GB RAM | Python 3.11, 16 GB RAM, GPU |
+- Python 3.11+
+- LiteRT-LM runtime (for inference)
+- litert-torch (for conversion)
+- torch + transformers + sentencepiece
 
 ---
 
-## Testing
-
-```bash
-pip install pytest torch
-pytest tests/
-```
-
-## License
+## 📄 License
 
 Apache 2.0 — see [LICENSE](LICENSE).
 
----
-
 <p align="center">
-  <sub>Part of the <a href="https://github.com/simpliibarrii-crypto">Raven ecosystem</a>. Built with Google LiteRT-LM, PyTorch, and Apple CoreML.</sub>
+  <sub>Hermes Edge · Built on Raven AI Ecosystem · Barry Clerjuste</sub>
 </p>

@@ -1,21 +1,16 @@
-"""Hermes mobile AI agent for Google AI Edge Gallery (LiteRT-LM).
-
-A small, agentic decoder-only transformer designed to be converted to the
-``.litertlm`` format and run on-device via the LiteRT-LM runtime.
+"""
+Hermes Edge — Package Init
 """
 
-from hermes.config import (
-    HermesConfig,
-    hermes_1b_config,
-    hermes_500m_config,
-    hermes_270m_config,
-)
+__version__ = "0.2.0"
+__author__ = "Barry Clerjuste"
+__email__ = "bclerjuste@gmail.com"
 
-__all__ = [
-    "HermesConfig",
-    "hermes_1b_config",
-    "hermes_500m_config",
-    "hermes_270m_config",
-]
+from hermes.config import HermesConfig, get_config, PRESETS
+from hermes.chat_template import build_prompt, Message
+from hermes.litert_model import LiteRTModel
 
-__version__ = "0.1.0"
+try:
+    from hermes.agent import HermesAgent, AgentConfig
+except ImportError:
+    pass

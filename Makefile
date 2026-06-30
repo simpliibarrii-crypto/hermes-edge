@@ -1,56 +1,78 @@
-# Hermes Edge — Build and Dev Commands
+.PHONY: install lint test clean convert-270m convert-500m convert-1b distill help
 
-.PHONY: install lint test clean build convert-270m convert-500m convert-1b help
+VENV ?= .venv
+PYTHON ?= python3
 
-install:  ## Install dev dependencies
-	pip install -e . ai-edge-torch litert-lm torch sentencepiece pytest ruff
-	pre-commit install 2>/dev/null || true
+help:
+	@echo "Hermes Edge Makefile"
+	@echo "  install       - Install all dependencies (venv + pip)"
+	@echo "  lint          - Run ruff linter"
+	@echo "  test          - Run pytest"
+	@echo "  clean         - Remove dist/, checkpoints/, tokenizer/, *.litertlm"
+	@echo "  convert-270m  - Convert Qwen2.5-0.5B to INT4 .litertlm (270M eq.)"
+	@echo "  convert-500m  - Convert Qwen2.5-1.5B to INT4 .litertlm (500M eq.)"
+	@echo "  convert-1b    - Convert Qwen3-0.6B to INT4 .litertlm (1B eq.)"
+	@echo "  run           - Start HF Space demo locally"
+	@echo "  upload        - Upload model to HuggingFace"
+	@echo ""
 
-lint:  ## Run linter
-	ruff check hermes/ scripts/ --ignore=E501
+install:
+	$(PYTHON) -m venv $(VENV)
+	$(VENV)/bin/pip install --upgrade pip setuptools
+	$(VENV)/bin/pip install -r requirements.txt
+	$(VENV)/bin/pip install -e .
+	@echo "Done. Activate: source $(VENV)/bin/activate"
 
-test:  ## Run tests
-	pytest tests/ -v
+lint:
+	$(VENV)/bin/ruff check hermes/ scripts/ tests/ hf-space/app.py
 
-clean:  ## Clean build artifacts
-	rm -rf dist/ build/ checkpoints/ tokenizer/ *.litertlm *.tflite __pycache__/
-	find . -name '__pycache__' -exec rm -rf {} + 2>/dev/null || true
+test:
+	$(VENV)/bin/pytest tests/ -v --tb=short
 
-convert-270m:  ## Convert 270M preset for iPhone 16 (ANE)
-	python scripts/convert_to_litertlm.py \
-		--checkpoint checkpoints/hermes-270m.pt \
-		--tokenizer tokenizer/hermes.model \
-		--preset hermes-270m \
-		--backend apple \
-		--multi-sig \
-		--output dist/hermes-mobile-270m-int4.litertlm
+clean:
+	rm -rf dist/ build/ checkpoints/ tokenizer/ *.litertlm .venv/ __pycache__/
+	rm -rf hermes/__pycache__ tests/__pycache__ scripts/__pycache__
+	find . -name "*.pyc" -delete
 
-convert-500m:  ## Convert 500M preset for iPhone 16 (ANE)
-	python scripts/convert_to_litertlm.py \
-		--checkpoint checkpoints/hermes-500m.pt \
-		--tokenizer tokenizer/hermes.model \
-		--preset hermes-500m \
-		--backend apple \
-		--multi-sig \
-		--output dist/hermes-mobile-500m-int4.litertlm
+convert-270m:
+	$(PYTHON) scripts/convert_hf_to_litertlm.py \
+		--model_id Qwen/Qwen2.5-0.5B-Instruct \
+		--output_dir ./dist \
+		--quantization dynamic_wi4_afp32 \
+		--cache_length 2048 \
+		--prefill_lengths 32 \
+		--force
+	@echo "270M model ready in dist/"
 
-convert-1b:  ## Convert 1B preset for iPhone 16 Pro (ANE)
-	python scripts/convert_to_litertlm.py \
-		--checkpoint checkpoints/hermes-1b.pt \
-		--tokenizer tokenizer/hermes.model \
-		--preset hermes-1b \
-		--backend apple \
-		--multi-sig \
-		--output dist/hermes-mobile-1b-int4.litertlm
+convert-500m:
+	$(PYTHON) scripts/convert_hf_to_litertlm.py \
+		--model_id Qwen/Qwen2.5-1.5B-Instruct \
+		--output_dir ./dist \
+		--quantization dynamic_wi4_afp32 \
+		--cache_length 2048 \
+		--prefill_lengths 32 \
+		--force
+	@echo "500M model ready in dist/"
 
-distill:  ## Distill from Gemma 3 1B (DeepSeek-style)
-	python scripts/distill_from_gemma.py \
-		--teacher google/gemma-3-1b \
-		--student-preset hermes-distilled-1b \
-		--data data/agentic_sft.jsonl \
-		--output checkpoints/hermes-distilled-1b.pt \
-		--temperature 3.0 --alpha 0.7
+convert-1b:
+	$(PYTHON) scripts/convert_hf_to_litertlm.py \
+		--model_id litert-community/Qwen3-0.6B \
+		--output_dir ./dist \
+		--quantization dynamic_wi4_afp32 \
+		--cache_length 4096 \
+		--prefill_lengths 32 \
+		--force
+	@echo "1B model ready in dist/"
 
-help:  ## Show this help
-	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | sort | \
-		awk 'BEGIN {FS = ":.*?## "}; {printf "\033[36m%-20s\033[0m %s\n", $$1, $$2}'
+distill:
+	@echo "Distillation requires GPU. Run on cloud instance:"
+	@echo "  python scripts/distill_from_gemma.py --teacher deepseek-ai/DeepSeek-R1-Distill-Qwen-1.5B"
+	@echo ""
+
+run:
+	$(PYTHON) hf-space/app.py
+
+upload:
+	@echo "Upload to HuggingFace:"
+	@echo "  hf upload bclermo/hermes-edge dist/hermes-mobile-270m-int4.litertlm --repo-type model"
+	@echo ""

@@ -1,19 +1,27 @@
-# Hermes mobile (LiteRT-LM) pipeline dependencies.
-# Pinned loosely; the LiteRT stack moves fast — bump as needed.
-
-# Core LiteRT / on-device conversion stack
-ai-edge-torch>=0.3.0
-litert-lm>=0.1.0
+# Core: LiteRT-LM runtime & conversion
+litert-lm>=0.13.0
+litert-torch>=0.9.0
 ai-edge-litert>=1.0.0
 
-# Model + training
+# Model & tokenizer
 torch>=2.4.0
+transformers>=4.44.0
 sentencepiece>=0.2.0
-numpy>=1.26.0
 
-# Conversion brings in TF/JAX lowering under the hood
-tf-nightly  # ai-edge-torch lowers through TFLite; provides the converter
+# Conversion (TFLite lowering)
+tf-nightly
 
 # Utilities
+numpy>=1.26.0
 tqdm>=4.66.0
-psutil>=5.9.0  # memory profiling in scripts/benchmark.py
+psutil>=5.9.0
+
+# API / serving (HF Space)
+gradio>=5.0.0
+httpx>=0.27.0
+
+# HF Hub
+huggingface_hub<0.26
+
+# DSPark / draft model (optional - CPU only)
+# onnxruntime>=1.18.0
