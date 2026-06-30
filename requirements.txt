@@ -14,7 +14,7 @@ tf-nightly
 # Utilities
 numpy>=1.26.0
 tqdm>=4.66.0
-psutil>=5.9.0
+psutil>=7.2.2
 
 # API / serving (HF Space)
 gradio>=5.0.0
