@@ -1,3 +1,23 @@
+---
+language:
+- en
+license: apache-2.0
+tags:
+- hermes-edge
+- mobile-ai
+- on-device
+- ios
+- iphone-16
+- apple-neural-engine
+- litert-lm
+- google-ai-edge-gallery
+- agent
+- tool-calling
+- raven-ecosystem
+library_name: custom
+pipeline_tag: text-generation
+---
+
 # Hermes Edge
 
 **On-device AI agent for iPhone 16 + Android — runs fully offline via Google AI Edge Gallery.**
