@@ -26,6 +26,22 @@ short_description: On-device AI agent for iPhone 16 and Android — runs fully o
 base_model: Qwen/Qwen2.5-0.5B-Instruct
 ---
 
+## Table of Contents
+
+- [Install](#-install-on-iphone-16-1-tap)
+- [Architecture](#-architecture)
+- [Performance](#-performance-iphone-16-pro--a18-pro)
+- [Build](#-build-your-own-model)
+- [Quick Start](#-quick-start)
+- [Components](#-components)
+- [FAQ](#-faq)
+- [Troubleshooting](#-troubleshooting)
+- [Requirements](#-requirements)
+- [Citation](#-citation)
+- [License](#-license)
+
+---
+
 # 🦊 Hermes Edge
 
 **On-device AI agent for iPhone 16 + Android — fully offline via LiteRT-LM.**
@@ -151,12 +167,59 @@ print(response)
 
 ---
 
+## ❓ FAQ
+
+### How fast is inference?
+On iPhone 16 Pro (A18 Pro), the 270M INT4 variant runs at ~55 tok/s. With DSpark speculative decoding, effective throughput reaches ~140 tok/s (2.5× speedup).
+
+### Which models are compatible?
+Any HuggingFace model can be converted to `.litertlm` format. Optimized presets exist for Qwen2.5 (0.5B, 1.5B) and Qwen3 (0.6B). Models must use the ChatML template for Hermes tool calling.
+
+### What are the conversion requirements?
+Conversion requires Python 3.11+, `litert-torch`, `torch`, `transformers`, and `sentencepiece`. No GPU is needed — conversion runs on CPU with ~2.7 GB RAM for a 0.6B model.
+
+### Can this run completely offline?
+Yes. The `.litertlm` model file runs locally on the Neural Engine via LiteRT-LM runtime. No internet connection is required after the model is downloaded.
+
+---
+
+## 🔧 Troubleshooting
+
+### `litert-lm` not found
+Ensure `litert-lm` and `litert-torch` are installed: `pip install litert-lm litert-torch`. The runtime is required for inference.
+
+### Vulkan errors
+On desktop, the LiteRT-LM runtime may attempt to use Vulkan. Set backend to `cpu`: `--backend cpu` or `LITERT_BACKEND=cpu`.
+
+### Low memory during conversion
+Use `--low-memory` flag with conversion scripts. This enables memory-mapped weight loading and explicit garbage collection between stages.
+
+### Conversion failures
+Ensure source model is in FP16 format. Try `--dtype fp32` for CPU-only environments. If using Qwen3, use the dedicated `scripts/convert_qwen.py` with `--preset qwen3-0.6b`.
+
+---
+
 ## 📋 Requirements
 
 - Python 3.11+
 - LiteRT-LM runtime (for inference)
 - litert-torch (for conversion)
 - torch + transformers + sentencepiece
+
+---
+
+## 📖 Citation
+
+If you use Hermes Edge in your research, please cite:
+
+```bibtex
+@software{clerjuste2025hermesedge,
+  author = {Clerjuste, Barry},
+  title = {Hermes Edge: On-Device AI Agent for iPhone 16 and Android},
+  year = {2025},
+  url = {https://github.com/simpliibarrii-crypto/hermes-edge}
+}
+```
 
 ---
 

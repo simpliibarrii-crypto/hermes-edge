@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Hugging Face Model
+    url: https://huggingface.co/bclermo/hermes-edge
+    about: Model card and downloads
+  - name: Hugging Face Space
+    url: https://huggingface.co/spaces/bclermo/hermes-edge
+    about: Live demo
