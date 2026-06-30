@@ -1,6 +1,8 @@
 import logging
 import time
+import threading
 from collections import OrderedDict
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Iterator
@@ -153,6 +155,10 @@ class AgentConfig:
     enable_response_cache: bool = True
     enable_streaming: bool = False
 
+    max_parallel_tools: int = 4
+    max_context_turns: int = 10
+    enable_tool_progress: bool = True
+
     intent_temperature: dict = field(default_factory=lambda: {
         INTENT_CHAT: 0.7,
         INTENT_REASONING: 0.6,
@@ -214,6 +220,8 @@ class AgentTurn:
 class Conversation:
     messages: list[Message] = field(default_factory=list)
     turns: list[AgentTurn] = field(default_factory=list)
+    max_context_turns: int = 10
+    compressed: bool = False
 
     def add_user(self, text: str) -> None:
         self.messages.append(Message(role="user", content=text))
@@ -225,6 +233,94 @@ class Conversation:
         self.messages.append(
             Message(role="tool", content=f"<tool_response>{name}: {content}</tool_response>")
         )
+
+    def compress(self, keep_last: int = 5) -> None:
+        """Compress old conversation turns when context grows too long.
+
+        Keeps the last `keep_last` turns verbatim and summarizes older turns
+        into a compressed preamble to prevent context window overflow.
+        """
+        if len(self.turns) <= self.max_context_turns:
+            return
+
+        compress_count = len(self.turns) - keep_last
+        old_turns = self.turns[:compress_count]
+        keep_turns = self.turns[-keep_last:]
+
+        summary_parts = ["Previous conversation summary:"]
+        for t in old_turns:
+            preview_u = t.user_input[:100].replace("\n", " ")
+            preview_a = t.assistant_response[:100].replace("\n", " ") if t.assistant_response else ""
+            summary_parts.append(f"  Q: {preview_u}  A: {preview_a}")
+
+        summary_msg = Message(role="system", content="\n".join(summary_parts))
+
+        keep_messages: list[Message] = [summary_msg]
+        for t in keep_turns:
+            keep_messages.append(Message(role="user", content=t.user_input))
+            if t.assistant_response:
+                keep_messages.append(Message(role="assistant", content=t.assistant_response))
+            for tr in t.tool_results:
+                keep_messages.append(
+                    Message(role="tool", content=f"<tool_response>{tr['name']}: {tr['content']}</tool_response>")
+                )
+
+        self.messages = keep_messages
+        self.turns = keep_turns
+        self.compressed = True
+        log.info("Conversation compressed: %d turns → %d turns", compress_count + keep_last, keep_last)
+
+
+# ── Model Preloader ──────────────────────────────────────────────
+
+
+class ModelPreloader:
+    """Background model preloader based on router predictions.
+
+    After the router classifies intent, this preloads the specialist model
+    in a background thread so it's ready when the agent needs it.
+    """
+
+    def __init__(self, model_manager: ModelManager):
+        self.manager = model_manager
+        self._thread: threading.Thread | None = None
+        self._loading: set[str] = set()
+
+    def prefetch(self, intent: str) -> None:
+        """Start loading the model for `intent` in a background thread."""
+        key = intent if intent in (INTENT_REASONING, INTENT_TOOLS) else "_hot"
+        if key == "_hot":
+            return  # hot model is always loaded
+        if key in self._loading:
+            return  # already loading
+        if key in self.manager._models and self.manager._models[key]._loaded:
+            return  # already loaded
+
+        self._loading.add(key)
+
+        def _load():
+            try:
+                log.debug("Preloading model: %s", key)
+                self.manager.select(key)
+            except Exception as exc:
+                log.warning("Preload failed for %s: %s", key, exc)
+            finally:
+                self._loading.discard(key)
+
+        self._thread = threading.Thread(target=_load, daemon=True)
+        self._thread.start()
+
+    def is_loading(self, key: str) -> bool:
+        return key in self._loading
+
+    def wait_for(self, key: str, timeout: float = 30.0) -> bool:
+        """Wait for a preloading model to finish."""
+        if key not in self._loading:
+            return True
+        if self._thread and self._thread.is_alive():
+            self._thread.join(timeout=timeout)
+            return not self._thread.is_alive()
+        return True
 
 
 # ── Agent ─────────────────────────────────────────────────────────
@@ -256,8 +352,18 @@ class HermesAgent:
         self.response_cache = ResponseCache()
         self._cache_hits = 0
         self._cache_misses = 0
+        self.preloader: ModelPreloader | None = None
+        self._tool_pool: ThreadPoolExecutor | None = (
+            ThreadPoolExecutor(max_workers=self.config.max_parallel_tools)
+            if self.config.max_parallel_tools > 1
+            else None
+        )
 
         self._apply_effort_config()
+
+        if model_manager:
+            self.preloader = ModelPreloader(model_manager)
+        self.conversation.max_context_turns = self.config.max_context_turns
 
         if self.config.mcp_servers:
             self._init_mcp(self.config.mcp_servers)
@@ -466,6 +572,7 @@ class HermesAgent:
             self.agent_memory.add_entry("user", user_input)
 
         turn.intent = intent
+        self._preload_for_intent(intent)
 
         if self.model_manager:
             effort_override = self.config.effort_map.get(
@@ -503,18 +610,18 @@ class HermesAgent:
         tool_round = 0
         while parsed.tool_calls and tool_round < self.config.max_tool_rounds:
             tool_round += 1
-            for call in parsed.tool_calls:
+            results = self._execute_tool_calls_parallel(parsed.tool_calls)
+            for call, result in zip(parsed.tool_calls, results):
                 name = call.get("name", "")
-                args = call.get("arguments", {})
-                result = self.tools.execute(name, args)
                 turn.tool_results.append(
                     {"name": name, "content": result.content, "success": result.success}
                 )
                 self.conversation.add_tool_result(name, result.content)
 
+            last_result = results[-1] if results else None
             tool_prompt = self.reasoning.build_tool_result_prompt(
-                tool_name=name if parsed.tool_calls else "unknown",
-                tool_content=result.content if parsed.tool_calls else "",
+                tool_name=parsed.tool_calls[-1]["name"] if parsed.tool_calls else "unknown",
+                tool_content=last_result.content if last_result else "",
                 original_prompt=prompt,
             )
             raw_output = self._generate(active_model, tool_prompt, max_tokens, temperature)
@@ -524,6 +631,7 @@ class HermesAgent:
             turn.tool_calls.extend(parsed.tool_calls)
 
         turn.latency_ms = (time.perf_counter() - start) * 1000
+        self.conversation.compress(keep_last=5)
         self.conversation.turns.append(turn)
         self.conversation.add_user(user_input)
         self.conversation.add_assistant(turn.assistant_response)
@@ -567,6 +675,7 @@ class HermesAgent:
             self.agent_memory.add_entry("user", user_input)
 
         turn.intent = intent
+        self._preload_for_intent(intent)
         intent_tag = f"[{intent}] "
 
         if self.model_manager:
@@ -612,18 +721,28 @@ class HermesAgent:
         tool_round = 0
         while parsed.tool_calls and tool_round < self.config.max_tool_rounds:
             tool_round += 1
-            for call in parsed.tool_calls:
+
+            if self.config.enable_tool_progress:
+                tool_names = [c.get("name", "?") for c in parsed.tool_calls]
+                yield f"\n⚡ [tools] calling: {', '.join(tool_names)}...\n"
+
+            results = self._execute_tool_calls_parallel(parsed.tool_calls)
+            for i, (call, result) in enumerate(zip(parsed.tool_calls, results)):
                 name = call.get("name", "")
-                args = call.get("arguments", {})
-                result = self.tools.execute(name, args)
                 turn.tool_results.append(
                     {"name": name, "content": result.content, "success": result.success}
                 )
                 self.conversation.add_tool_result(name, result.content)
 
+                if self.config.enable_tool_progress and len(parsed.tool_calls) > 1:
+                    status = "✓" if result.success else "✗"
+                    preview = result.content[:60].replace("\n", " ")
+                    yield f"  {status} {name}: {preview}\n"
+
+            last_result = results[-1] if results else None
             tool_prompt = self.reasoning.build_tool_result_prompt(
-                tool_name=name if parsed.tool_calls else "unknown",
-                tool_content=result.content if parsed.tool_calls else "",
+                tool_name=parsed.tool_calls[-1]["name"] if parsed.tool_calls else "unknown",
+                tool_content=last_result.content if last_result else "",
                 original_prompt=prompt,
             )
             for token in self._generate_stream(active_model, tool_prompt, max_tokens, temperature):
@@ -635,6 +754,7 @@ class HermesAgent:
             turn.tool_calls.extend(parsed.tool_calls)
 
         turn.latency_ms = (time.perf_counter() - start) * 1000
+        self.conversation.compress(keep_last=5)
         self.conversation.turns.append(turn)
         self.conversation.add_user(user_input)
         self.conversation.add_assistant(turn.assistant_response)
@@ -660,15 +780,60 @@ class HermesAgent:
         else:
             yield ""
 
+    def _execute_tool_calls_parallel(
+        self, calls: list[dict]
+    ) -> list:
+        """Execute tool calls in parallel when possible.
+
+        Independent tool calls run concurrently via ThreadPoolExecutor.
+        Sequential execution is used if max_parallel_tools <= 1.
+        """
+        if not calls:
+            return []
+
+        if not self._tool_pool or len(calls) <= 1:
+            return [self.tools.execute(c.get("name", ""), c.get("arguments", {})) for c in calls]
+
+        futures = {}
+        for i, call in enumerate(calls):
+            name = call.get("name", "")
+            args = call.get("arguments", {})
+
+            def _make_future(n, a):
+                return self._tool_pool.submit(self.tools.execute, n, a)
+
+            futures[self._tool_pool.submit(self.tools.execute, name, args)] = i
+
+        results: list = [None] * len(calls)
+        for future in as_completed(futures):
+            idx = futures[future]
+            try:
+                results[idx] = future.result()
+            except Exception as exc:
+                log.warning("Parallel tool %d failed: %s", idx, exc)
+                results[idx] = type("R", (), {"content": str(exc), "success": False})()
+
+        return results
+
+    def _preload_for_intent(self, intent: str) -> None:
+        """Start background preloading of the specialist model for this intent."""
+        if self.preloader and self.config.enable_routing:
+            self.preloader.prefetch(intent)
+
     def _build_history_prompt(self) -> str:
-        if len(self.conversation.turns) < 2:
+        n_turns = len(self.conversation.turns)
+        if n_turns < 2:
             return ""
+
         recent = self.conversation.turns[-3:]
         parts = ["Previous conversation:"]
         for t in recent:
             parts.append(f"User: {t.user_input[:200]}")
             if t.assistant_response:
                 parts.append(f"Assistant: {t.assistant_response[:200]}")
+
+        if self.conversation.compressed:
+            parts.insert(1, "(older context summarized)")
         return "\n".join(parts)
 
     def _generate(
