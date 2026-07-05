@@ -10,6 +10,7 @@ from hermes.config import HermesConfig, get_config, PRESETS
 from hermes.chat_template import build_prompt, Message
 from hermes.litert_model import LiteRTModel
 from hermes.router import classify, get_intent, INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
+from hermes.edge_policy import DeviceTier, Runtime, TaskClass, choose_profile, profiles
 from hermes.exceptions import HermesEdgeError, ModelLoadError, InferenceError, ToolExecutionError, RoutingError, WebSearchError, ConfigError
 from hermes.web_search import web_search, SearchResult
 from hermes.rag import RAGEngine

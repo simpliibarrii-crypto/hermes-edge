@@ -1,88 +1,92 @@
-# Model Card: Hermes Mobile (LiteRT-LM)
+---
+language:
+- en
+license: apache-2.0
+tags:
+- litert-lm
+- google-ai-edge
+- gemma
+- gemini-nano
+- gpu-first
+- mobile-ai
+- on-device
+- local-first
+pipeline_tag: text-generation
+library_name: custom
+base_model: google/gemma-3n-E2B-it
+---
 
-## Overview
+# Hermes Edge LiteRT-LM Model Card
 
-**Hermes Mobile** is a small, agentic, decoder-only language model built to run
-fully on-device inside the [Google AI Edge Gallery](https://github.com/google-ai-edge/gallery)
-app via the **LiteRT-LM** runtime. It is distributed as a single `.litertlm`
-bundle and supports **iPhone 16 (A18 Pro ANE)**, **Android (GPU/NPU)**, and
-**iPad (M-series)**.
-
-| Field | Value |
-|---|---|
-| Model name | `hermes-mobile-1b-litertlm` |
-| Architecture | Decoder-only transformer, grouped-query attention |
-| Parameters | ~270M / ~500M / ~1.0B (selectable preset) |
-| Context window | 4096 tokens (8192 for Gemma presets) |
-| Position embedding | RoPE |
-| Normalization | RMSNorm (pre-norm) |
-| Activation | SwiGLU |
-| Tokenizer | SentencePiece BPE, 32k vocab |
-| Quantization | INT4 per-channel (weight-only dynamic) |
-| File format | `.litertlm` |
-| Runtime | LiteRT-LM (CoreML delegate on iOS) |
+Hermes Edge is a GPU-first, local-first edge AI agent runtime designed for LiteRT-LM and Google AI Edge style deployments. It is optimized for phones, tablets, laptops, and small edge boxes.
 
 ## Intended use
 
-- On-device chat assistant and **agent** for **iPhone 16** and **Android** via Google AI Edge Gallery
-- Tool-calling / function-calling: emits structured `<tool_call>` JSON
-- Privacy-sensitive scenarios where prompts must not leave the device
-- Offline AI assistant in low-connectivity environments
+- Local AI assistant and tool-calling agent
+- Android and iOS edge inference experiments
+- Gemma 3n / LiteRT-LM deployment testing
+- Benchmark-gated speculative decoding and MTP experiments
+- Offline demos where cloud inference is not acceptable
 
-### Out of scope
+## Runtime policy
 
-- High-stakes decisions (medical, legal, financial) without human review
-- Long-document reasoning beyond the context window
-- Tasks requiring broad, current world knowledge — pair with the web-search skill
+Hermes uses a dependency-free route policy:
 
-## Targeted Devices
+1. deterministic tools before model calls
+2. Gemini Nano/AICore only when available and explicitly preferred
+3. Gemma 3n E2B/E4B INT4 LiteRT-LM as default local model path
+4. Gemma 4 MTP/speculative only when backend support and benchmarks prove benefit
+5. cloud fallback disabled by default
 
-| Device | Chip | Backend | Speed (270m) | Speed (1b) |
-|---|---|---|---|---|
-| iPhone 16 | A18 | ANE (CoreML) | ~55 tok/s | ~25 tok/s |
-| iPhone 16 Pro | A18 Pro | ANE (CoreML) | ~60 tok/s | ~28 tok/s |
-| iPhone 15 Pro | A17 Pro | ANE (CoreML) | ~50 tok/s | ~22 tok/s |
-| iPad Pro M4 | M4 | ANE (CoreML) | ~70 tok/s | ~35 tok/s |
-| Galaxy S24 Ultra | SD 8 Gen 3 | GPU | ~65 tok/s | ~30 tok/s |
-| Pixel 9 Pro | Tensor G4 | GPU | ~45 tok/s | ~20 tok/s |
+## GPU-primary backend behavior
 
-## DeepSeek-Inspired Reasoning
+When `backend="auto"`, Hermes tries GPU-class delegates first:
 
-Hermes uses chain-of-thought + tool-calling prompting inspired by DeepSeek-R1:
+1. `gpu`
+2. `vulkan`
+3. `metal`
+4. `ane`
+5. `cpu`
 
-```
-User: Calculate 15% of 340
-Assistant (thinking):
-  10% of 340 = 34
-  5% of 340 = 17
-  34 + 17 = 51
-Tool: calculator(expression="340*0.15") -> 51
-Assistant: 15% of 340 is 51.
-```
+If GPU delegate fails at runtime, Hermes falls back to next local backend. CPU is fallback, not primary.
 
-## Architecture
+## Install
 
-Standard decoder-only transformer with grouped-query attention, RoPE, SwiGLU, RMSNorm:
-- `hermes-270m`: 21 layers, 1024 hidden, 16 heads, 4 KV heads
-- `hermes-500m`: 24 layers, 1536 hidden, 24 heads, 6 KV heads
-- `hermes-1b`: 22 layers, 2048 hidden, 32 heads, 4 KV heads
-- `gemma-3-1b`: 26 layers, 2048 hidden, 16 heads, 8 KV heads, 8192 ctx
-
-## Installation
-
-**iOS:** Open Google AI Edge Gallery → **+** → **Import from URL** → paste:
-```
-https://huggingface.co/bclermo/hermes-edge/resolve/main/hermes-mobile-270m-int4.litertlm
+```bash
+git clone https://github.com/simpliibarrii-crypto/hermes-edge.git
+cd hermes-edge
+python3 -m venv .venv
+source .venv/bin/activate
+pip install -e ".[dev]"
+pytest tests/test_edge_policy.py tests/test_agent_edge_routing.py tests/test_litert_backend.py -q
 ```
 
-**Android:** Copy to `/sdcard/Download/` → Open Gallery → **+** → Select file.
+For LiteRT-LM inference:
 
-## Training & Distillation
+```bash
+pip install -e ".[runtime]"
+hermes --model dist/hermes-mobile-270m-int4.litertlm --backend auto
+```
 
-- Fine-tuned with `scripts/train.py` on agentic chat data
-- Knowledge distillation from Gemma 3 1B via `scripts/distill_from_gemma.py`
-- DeepSeek-R1 style chain-of-thought supervision for reasoning
+For conversion:
+
+```bash
+pip install -e ".[model,conversion,runtime]"
+```
+
+## Benchmarks
+
+No performance claim is valid without exact device, model profile, backend used, TTFT, decode tokens/sec, prefill tokens/sec, peak memory, and thermal state.
+
+See `docs/BENCHMARK_CONTRACT.md`.
+
+## Limitations
+
+- `.litertlm` bundles must be built or downloaded separately.
+- Hardware delegate support varies by device and runtime version.
+- Speculative/MTP acceleration is gated by backend support and measured improvement.
+- Hosted demos are optional and not required for local use.
 
 ## License
 
-Apache 2.0
+Apache-2.0.

@@ -8,7 +8,7 @@ This document provides a brief overview. For the full detailed architecture, see
 - **Inference Engine**: LiteRT-LM runtime with streaming, reasoning, and speculative decoding
 - **Agent Framework**: Hermes-style tool calling with parallel dispatch and memory
 - **Intent Router**: Lightweight regex-based classification (~5μs) for chat/reasoning/tools
-- **DSpark**: Speculative decoding with a 30M-parameter draft model for ~2.5× speedup
+- **Speculative decoding/MTP**: optional acceleration only when the backend exposes support and benchmarks prove speedup
 
 ## Key Modules
 

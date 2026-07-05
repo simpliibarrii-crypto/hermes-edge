@@ -5,7 +5,8 @@ PYTHON ?= python3
 
 help:
 	@echo "Hermes Edge Makefile"
-	@echo "  install       - Install all dependencies (venv + pip)"
+	@echo "  install       - Install lightweight core + dev tools"
+	@echo "  install-all   - Install full model/runtime/conversion stack"
 	@echo "  lint          - Run ruff linter"
 	@echo "  test          - Run pytest"
 	@echo "  clean         - Remove dist/, checkpoints/, tokenizer/, *.litertlm"
@@ -18,13 +19,18 @@ help:
 
 install:
 	$(PYTHON) -m venv $(VENV)
-	$(VENV)/bin/pip install --upgrade pip setuptools
-	$(VENV)/bin/pip install -r requirements.txt
-	$(VENV)/bin/pip install -e .
+	$(VENV)/bin/pip install --upgrade pip setuptools wheel
+	$(VENV)/bin/pip install -e ".[dev]"
+	@echo "Done. Activate: source $(VENV)/bin/activate"
+
+install-all:
+	$(PYTHON) -m venv $(VENV)
+	$(VENV)/bin/pip install --upgrade pip setuptools wheel
+	$(VENV)/bin/pip install -e ".[all]"
 	@echo "Done. Activate: source $(VENV)/bin/activate"
 
 lint:
-	$(VENV)/bin/ruff check hermes/ scripts/ tests/ hf-space/app.py
+	$(VENV)/bin/ruff check hermes/ scripts/ tests/ space_app.py
 
 test:
 	$(VENV)/bin/pytest tests/ -v --tb=short
@@ -70,7 +76,7 @@ distill:
 	@echo ""
 
 run:
-	$(PYTHON) hf-space/app.py
+	$(PYTHON) space_app.py
 
 upload:
 	@echo "Upload to HuggingFace:"

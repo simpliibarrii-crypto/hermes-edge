@@ -1,65 +1,39 @@
 {
-  "model_name": "hermes-mobile-270m-litertlm",
-  "display_name": "Hermes Mobile 270M (LiteRT-LM) — iPhone 16 optimized",
-  "format": "litertlm",
-  "quantization": "int4_per_channel",
-  "context_length": 4096,
-  "parameters": "270M",
-  "framework": "litert-lm",
-  "architecture": "decoder-only-gqa",
-  "license": "apache-2.0",
-  "tags": [
-    "litert-lm",
-    "litert",
-    "on-device",
-    "mobile",
-    "iphone",
-    "ios",
-    "iphone-16",
-    "apple-neural-engine",
-    "agent",
-    "tool-calling",
-    "google-ai-edge-gallery",
-    "raven-ecosystem"
-  ],
-  "library_name": "litert-lm",
-  "pipeline_tag": "text-generation",
-  "base_model": "hermes-edge/hermes-270m",
-  "intended_org": "bclermo",
-  "files": {
-    "model": "hermes-mobile-270m-int4.litertlm",
-    "model_card": "model_card.md"
-  },
-  "config": {
-    "vocab_size": 32000,
-    "hidden_size": 1024,
-    "intermediate_size": 2816,
-    "num_layers": 21,
-    "num_heads": 16,
-    "num_kv_heads": 4,
-    "head_dim": 64,
-    "max_seq_len": 4096,
-    "rope_theta": 10000.0,
-    "rms_norm_eps": 1e-06,
-    "tie_embeddings": true,
-    "attention": "grouped_query_attention",
-    "activation": "silu_swiglu",
-    "normalization": "rms_norm",
-    "position_embedding": "rope"
+  "model_type": "hermes-edge-litertlm",
+  "library_name": "custom",
+  "base_model": "google/gemma-3n-E2B-it",
+  "local_first": true,
+  "cloud_fallback_default": false,
+  "backend_policy": {
+    "default": "auto",
+    "auto_order": [
+      "gpu",
+      "vulkan",
+      "metal",
+      "ane",
+      "cpu"
+    ],
+    "primary": "gpu",
+    "fallback": "cpu"
   },
   "runtime": {
-    "min_ios_version": 17,
-    "recommended_ios_version": 18,
-    "min_android_version": 10,
-    "recommended_ram_gb": 6,
-    "accelerators": ["apple_neural_engine", "gpu", "cpu"],
-    "apple_ane": true,
-    "backends": ["coreml", "gpu", "cpu"],
-    "approx_file_size_mb": 180
+    "litert_lm": true,
+    "gemini_nano_aicore_optional": true,
+    "mtp_optional": true,
+    "benchmark_required_for_speed_claims": true
   },
-  "variants": {
-    "hermes-270m": {"size_mb": 180, "params": "270M", "iphone_16_tok_per_sec": 55},
-    "hermes-500m": {"size_mb": 280, "params": "500M", "iphone_16_tok_per_sec": 40},
-    "hermes-1b": {"size_mb": 600, "params": "1B", "iphone_16_tok_per_sec": 25}
+  "profiles": [
+    "tool-first",
+    "gemma-3n-e2b-int4-litert",
+    "gemma-3n-e4b-int4-litert",
+    "gemma-4-e2b-mtp-litert",
+    "gemini-nano-aicore"
+  ],
+  "install_extras": {
+    "dev": "pip install -e .[dev]",
+    "runtime": "pip install -e .[runtime]",
+    "conversion": "pip install -e .[model,conversion,runtime]",
+    "space": "pip install -e .[space,model]",
+    "all": "pip install -e .[all]"
   }
 }

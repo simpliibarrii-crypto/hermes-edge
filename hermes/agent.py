@@ -8,8 +8,9 @@ from pathlib import Path
 from typing import Iterator
 
 from hermes.chat_template import Message
+from hermes.edge_policy import DeviceTier, RouteDecision, TaskClass, choose_profile
 from hermes.litert_model import LiteRTModel
-from hermes.router import classify, get_intent, INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
+from hermes.router import classify, INTENT_CHAT, INTENT_REASONING, INTENT_TOOLS
 from scripts.deepseek_reasoning_template import ReasoningPipeline
 from scripts.hermes_tool_format import ToolRegistry, HermesToolFormatter
 from hermes.mcp_client import MCPManager
@@ -80,11 +81,24 @@ class ModelManager:
     LiteRT-LM fast initialization makes on-demand loading practical.
     """
 
-    def __init__(self, backend: str = "auto"):
+    def __init__(
+        self,
+        backend: str = "auto",
+        *,
+        device_tier: DeviceTier = DeviceTier.MID,
+        available_ram_mb: int = 4096,
+        prefer_system_model: bool = False,
+        mtp_available: bool = False,
+    ):
         self._models: dict[str, LiteRTModel] = {}
         self._hot_key: str = ""
         self.current_key: str = ""
         self.backend = backend
+        self.device_tier = device_tier
+        self.available_ram_mb = available_ram_mb
+        self.prefer_system_model = prefer_system_model
+        self.mtp_available = mtp_available
+        self.last_route_decision: RouteDecision | None = None
 
     def load_hot(self, path: str) -> bool:
         p = Path(path).resolve()
@@ -131,6 +145,40 @@ class ModelManager:
     def resolve(self, intent: str) -> LiteRTModel:
         key = intent if intent in (INTENT_REASONING, INTENT_TOOLS) else "_hot"
         return self.select(key)
+
+    def route_for_intent(self, intent: str) -> RouteDecision:
+        task = _task_from_intent(intent)
+        decision = choose_profile(
+            task,
+            self.device_tier,
+            self.available_ram_mb,
+            prefer_system_model=self.prefer_system_model,
+            mtp_available=self.mtp_available,
+        )
+        self.last_route_decision = decision
+        return decision
+
+    def resolve_edge(self, intent: str) -> LiteRTModel:
+        """Resolve model with Google-edge policy first, local registry second."""
+        decision = self.route_for_intent(intent)
+        profile_id = decision.profile.id
+        family = decision.profile.model_family
+
+        for key in (profile_id, family, intent):
+            if key in self._models:
+                return self.select(key)
+
+        if intent not in (INTENT_REASONING, INTENT_TOOLS):
+            return self.select("_hot")
+        return self.resolve(intent)
+
+
+def _task_from_intent(intent: str) -> TaskClass:
+    if intent == INTENT_TOOLS:
+        return TaskClass.TOOL
+    if intent == INTENT_REASONING:
+        return TaskClass.REASONING
+    return TaskClass.CHAT
 
 
 # ── Agent Config ──────────────────────────────────────────────────
@@ -579,8 +627,9 @@ class HermesAgent:
                 self.config.reasoning_effort, {}
             ).get("model_intent")
             resolve_intent = effort_override or intent
-            active_model = self.model_manager.resolve(resolve_intent)
-            turn.model_used = self.model_manager.current_key
+            active_model = self.model_manager.resolve_edge(resolve_intent)
+            route = self.model_manager.last_route_decision
+            turn.model_used = route.profile.id if route else self.model_manager.current_key
         else:
             active_model = self.model
             turn.model_used = "default"
@@ -683,8 +732,9 @@ class HermesAgent:
                 self.config.reasoning_effort, {}
             ).get("model_intent")
             resolve_intent = effort_override or intent
-            active_model = self.model_manager.resolve(resolve_intent)
-            turn.model_used = self.model_manager.current_key
+            active_model = self.model_manager.resolve_edge(resolve_intent)
+            route = self.model_manager.last_route_decision
+            turn.model_used = route.profile.id if route else self.model_manager.current_key
         else:
             active_model = self.model
             turn.model_used = "default"

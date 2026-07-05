@@ -10,11 +10,13 @@ log = logging.getLogger(__name__)
 class LiteRTModel:
 
     SUPPORTED_BACKENDS = ["auto", "cpu", "gpu", "ane", "metal", "vulkan"]
+    GPU_PRIMARY_ORDER = ["gpu", "vulkan", "metal", "ane", "cpu"]
 
     def __init__(self, model_path: str, cli_path: str = "litert-lm", backend: str = "auto"):
         self.model_path = Path(model_path).resolve()
         self.cli_path = cli_path
         self.backend = backend
+        self.active_backend = backend
         self.enable_mtp = True
         self.vocab_size = 32000
         self.tokenizer = None
@@ -37,6 +39,7 @@ class LiteRTModel:
                 return False
 
         self._detect_backends()
+        self.active_backend = self.get_recommended_backend() if self.backend == "auto" else self.backend
         self._loaded = True
         mb = self.model_path.stat().st_size / 1024 / 1024
         log.info("Model loaded: %s (%.1f MB) backends=%s", self.model_path.name, mb, self._detected_backends)
@@ -74,11 +77,23 @@ class LiteRTModel:
         return list(self._detected_backends)
 
     def get_recommended_backend(self) -> str:
-        priority = ["ane", "metal", "gpu", "vulkan", "coreml"]
-        for p in priority:
-            if p in self._detected_backends:
-                return p
-        return "cpu" if "cpu" in self._detected_backends else "cpu"
+        """Prefer GPU-class delegates first, with CPU as safe fallback."""
+        for backend in self.GPU_PRIMARY_ORDER:
+            if backend in self._detected_backends:
+                return backend
+        return "gpu" if not self._detected_backends else "cpu"
+
+    def get_backend_attempts(self) -> list[str]:
+        """Backends to try for inference, ordered for GPU-primary local speed."""
+        if self.backend != "auto":
+            return [self.backend]
+
+        attempts = [b for b in self.GPU_PRIMARY_ORDER if b in self._detected_backends]
+        if not attempts:
+            attempts = ["gpu", "vulkan", "metal", "ane", "cpu"]
+        elif "cpu" not in attempts:
+            attempts.append("cpu")
+        return attempts
 
     def generate(
         self,
@@ -90,40 +105,30 @@ class LiteRTModel:
         if not self._loaded:
             return "Error: Model not loaded."
 
-        try:
-            cmd = [
-                self.cli_path,
-                "run",
-                str(self.model_path),
-                "--prompt",
-                prompt,
-                "--max_tokens",
-                str(max_tokens),
-                "--temperature",
-                str(temperature),
-                "--top_k",
-                str(top_k),
-            ]
+        for backend in self.get_backend_attempts():
+            try:
+                cmd = self._build_command(
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_k=top_k,
+                    backend=backend,
+                )
+                result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
+                if result.returncode == 0 and result.stdout.strip():
+                    self.active_backend = backend
+                    return result.stdout.strip()
 
-            if self.backend != "auto":
-                cmd.extend(["--backend", self.backend])
+                if result.stderr:
+                    log.warning("LiteRT backend %s stderr: %s", backend, result.stderr[:200])
 
-            if self.enable_mtp:
-                cmd.append("--enable_mtp")
-
-            result = subprocess.run(cmd, capture_output=True, text=True, timeout=90)
-            if result.returncode == 0 and result.stdout.strip():
-                return result.stdout.strip()
-
-            if result.stderr:
-                log.warning("CLI stderr: %s", result.stderr[:200])
-
-        except FileNotFoundError:
-            log.warning("litert-lm CLI not available, using simulated response")
-        except subprocess.TimeoutExpired:
-            log.warning("Model inference timed out")
-        except Exception as exc:
-            log.warning("Model inference error: %s", exc)
+            except FileNotFoundError:
+                log.warning("litert-lm CLI not available, using simulated response")
+                break
+            except subprocess.TimeoutExpired:
+                log.warning("LiteRT backend %s timed out", backend)
+            except Exception as exc:
+                log.warning("LiteRT backend %s error: %s", backend, exc)
 
         return self._simulate_response(prompt)
 
@@ -139,50 +144,83 @@ class LiteRTModel:
             yield "Error: Model not loaded."
             return
 
-        try:
-            cmd = [
-                self.cli_path,
-                "run",
-                str(self.model_path),
-                "--prompt",
-                prompt,
-                "--max_tokens",
-                str(max_tokens),
-                "--temperature",
-                str(temperature),
-                "--top_k",
-                str(top_k),
-                "--stream",
-            ]
+        for backend in self.get_backend_attempts():
+            try:
+                cmd = self._build_command(
+                    prompt,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    top_k=top_k,
+                    backend=backend,
+                    stream=True,
+                )
+                proc = subprocess.Popen(
+                    cmd,
+                    stdout=subprocess.PIPE,
+                    stderr=subprocess.PIPE,
+                    text=True,
+                    bufsize=1,
+                )
 
-            if self.backend != "auto":
-                cmd.extend(["--backend", self.backend])
+                emitted = False
+                if proc.stdout is None:
+                    continue
+                for line in iter(proc.stdout.readline, ""):
+                    line = line.strip()
+                    if line:
+                        emitted = True
+                        yield line + " "
+                    if proc.poll() is not None:
+                        break
+                proc.stdout.close()
 
-            if self.enable_mtp:
-                cmd.append("--enable_mtp")
+                if emitted and (proc.returncode is None or proc.returncode == 0):
+                    self.active_backend = backend
+                    return
 
-            proc = subprocess.Popen(
-                cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                text=True, bufsize=1,
-            )
+                if proc.stderr:
+                    err = proc.stderr.read().strip()
+                    if err:
+                        log.warning("LiteRT stream backend %s stderr: %s", backend, err[:200])
 
-            for line in iter(proc.stdout.readline, ""):
-                line = line.strip()
-                if line:
-                    yield line + " "
-                if proc.poll() is not None:
-                    break
-            proc.stdout.close()
+            except FileNotFoundError:
+                log.warning("litert-lm CLI not available, using simulated stream")
+                break
+            except Exception as exc:
+                log.warning("LiteRT stream backend %s error: %s", backend, exc)
 
-            if proc.returncode and proc.returncode != 0:
-                yield from self._simulate_stream(prompt)
+        yield from self._simulate_stream(prompt)
 
-        except FileNotFoundError:
-            log.warning("litert-lm CLI not available, using simulated stream")
-            yield from self._simulate_stream(prompt)
-        except Exception as exc:
-            log.warning("Stream error: %s", exc)
-            yield from self._simulate_stream(prompt)
+    def _build_command(
+        self,
+        prompt: str,
+        *,
+        max_tokens: int,
+        temperature: float,
+        top_k: int,
+        backend: str,
+        stream: bool = False,
+    ) -> list[str]:
+        cmd = [
+            self.cli_path,
+            "run",
+            str(self.model_path),
+            "--prompt",
+            prompt,
+            "--max_tokens",
+            str(max_tokens),
+            "--temperature",
+            str(temperature),
+            "--top_k",
+            str(top_k),
+            "--backend",
+            backend,
+        ]
+        if stream:
+            cmd.append("--stream")
+        if self.enable_mtp:
+            cmd.append("--enable_mtp")
+        return cmd
 
     def _simulate_stream(self, prompt: str) -> Iterator[str]:
         """Simulate streaming tokens for demo/testing."""
@@ -208,7 +246,7 @@ class LiteRTModel:
                 "Here's what I figure: answer's right there after working through it step by step."
             )
         return (
-            f"<think>Processing via {self.model_path.stem} ({self.backend}).</think>\n"
+            f"<think>Processing via {self.model_path.stem} ({self.active_backend}).</think>\n"
             f"Heard you: \"{prompt[:80]}\". Running offline and ready."
         )
 
@@ -222,4 +260,6 @@ class LiteRTModel:
             "supported_backends": self._detected_backends,
             "recommended_backend": self.get_recommended_backend(),
             "backend": self.backend,
+            "active_backend": self.active_backend,
+            "backend_attempts": self.get_backend_attempts(),
         }
