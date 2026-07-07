@@ -478,11 +478,27 @@ class HermesAgent:
             import math as _math
 
             def _calc(expr: str) -> str:
+                """Evaluate mathematical expressions safely."""
+                import ast
                 safe = {"abs": abs, "round": round, "int": int, "float": float,
                         "min": min, "max": max, "sum": sum, "pow": pow}
                 safe.update({k: getattr(_math, k) for k in dir(_math)
                             if not k.startswith("_") and callable(getattr(_math, k))})
-                return str(eval(expr, {"__builtins__": {}}, safe))
+                safe_funcs = set(safe.keys())
+                tree = ast.parse(expr.strip(), mode="eval")
+                allowed_ops = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Num, ast.Constant,
+                               ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
+                               ast.Pow, ast.USub, ast.UAdd, ast.Call, ast.Name, ast.Load,
+                               ast.Attribute)
+                for node in ast.walk(tree):
+                    if not isinstance(node, allowed_ops):
+                        return json.dumps({"error": f"Disallowed syntax: {type(node).__name__}"})
+                    if isinstance(node, ast.Call):
+                        if not isinstance(node.func, ast.Name):
+                            return json.dumps({"error": "Only simple function calls allowed"})
+                        if node.func.id not in safe_funcs:
+                            return json.dumps({"error": f"Disallowed function: {node.func.id}"})
+                return str(eval(compile(tree, "<string>", "eval"), {"__builtins__": {}}, safe))
 
             self.register_tool(
                 "calculator",

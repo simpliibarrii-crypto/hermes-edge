@@ -38,7 +38,30 @@ class CodeExecutor:
         except SyntaxError as e:
             return ExecutionResult(False, error=f"Syntax error: {e}")
 
+        # Whitelist of allowed AST node types — blocks dangerous constructs
+        # like class/function definitions, attribute writes, comprehensions, etc.
+        _ALLOWED_NODES = frozenset({
+            ast.Module, ast.Expr, ast.Assign, ast.AugAssign, ast.Name, ast.Store,
+            ast.Load, ast.Constant, ast.Num, ast.Str, ast.BinOp, ast.UnaryOp,
+            ast.BoolOp, ast.Compare, ast.IfExp, ast.Call, ast.Attribute,
+            ast.Subscript, ast.Index, ast.Slice, ast.List, ast.Tuple, ast.Dict,
+            ast.Set, ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
+            ast.Pow, ast.LShift, ast.RShift, ast.BitOr, ast.BitXor, ast.BitAnd,
+            ast.MatMult, ast.USub, ast.UAdd, ast.Not, ast.Invert, ast.And, ast.Or,
+            ast.Eq, ast.NotEq, ast.Lt, ast.LtE, ast.Gt, ast.GtE, ast.Is, ast.IsNot,
+            ast.In, ast.NotIn, ast.If, ast.For, ast.While, ast.Break, ast.Continue,
+            ast.Pass, ast.Raise, ast.Try, ast.Finally, ast.ExceptHandler,
+            ast.Return, ast.Yield, ast.YieldFrom, ast.Starred, ast.Delete,
+            ast.With, ast.withitem, ast.comprehension, ast.ListComp, ast.SetComp,
+            ast.DictComp, ast.GeneratorExp, ast.Lambda, ast.arg, ast.arguments,
+            ast.keyword,
+        })
         for node in ast.walk(tree):
+            ntype = type(node)
+            if ntype not in _ALLOWED_NODES:
+                return ExecutionResult(
+                    False, error=f"Disallowed syntax: {ntype.__name__}"
+                )
             if isinstance(node, (ast.Import, ast.ImportFrom)):
                 for alias in node.names:
                     top = alias.name.split(".")[0]
@@ -48,6 +71,8 @@ class CodeExecutor:
                         )
             elif isinstance(node, ast.Call):
                 self._check_call_safety(node)
+
+        log.warning("Executing untrusted code in sandbox — use with caution")
 
         safe_builtins: dict[str, Any] = {
             "abs": abs, "all": all, "any": any, "bool": bool,
