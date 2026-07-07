@@ -64,6 +64,11 @@ def main():
         help="Run as HTTP API server",
     )
     parser.add_argument(
+        "--host",
+        default="127.0.0.1",
+        help="Server bind address (default: 127.0.0.1, use 0.0.0.0 for network access)",
+    )
+    parser.add_argument(
         "--port",
         type=int,
         default=8080,
@@ -307,8 +312,9 @@ def run_openai_server(args, agent, agent_memory, rag):
     OpenAIHandler.server_memory = agent_memory
     OpenAIHandler.server_rag = rag
 
-    server = HTTPServer(("0.0.0.0", args.port), OpenAIHandler)
-    log.info("OpenAI-compatible API server on http://0.0.0.0:%d/v1", args.port)
+    server = HTTPServer((args.host, args.port), OpenAIHandler)
+    bind_display = args.host if args.host != "0.0.0.0" else "0.0.0.0 (all interfaces)"
+    log.info("OpenAI-compatible API server on http://%s:%d/v1", bind_display, args.port)
     log.info("  GET  /v1/models")
     log.info("  POST /v1/chat/completions  (stream=True supported)")
     log.info("  Effort: %s | Cache: %s", args.effort, "ON" if not args.no_cache else "OFF")

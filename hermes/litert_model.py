@@ -165,6 +165,18 @@ class LiteRTModel:
                 emitted = False
                 if proc.stdout is None:
                     continue
+
+                # Drain stderr in a background thread to prevent pipe buffer
+                # deadlock when the subprocess writes a lot to stderr.
+                stderr_lines: list[str] = []
+                def _drain_stderr():
+                    if proc.stderr:
+                        for line in iter(proc.stderr.readline, ""):
+                            stderr_lines.append(line)
+                import threading as _t
+                stderr_thread = _t.Thread(target=_drain_stderr, daemon=True)
+                stderr_thread.start()
+
                 for line in iter(proc.stdout.readline, ""):
                     line = line.strip()
                     if line:
@@ -173,15 +185,15 @@ class LiteRTModel:
                     if proc.poll() is not None:
                         break
                 proc.stdout.close()
+                stderr_thread.join(timeout=2.0)
 
                 if emitted and (proc.returncode is None or proc.returncode == 0):
                     self.active_backend = backend
                     return
 
-                if proc.stderr:
-                    err = proc.stderr.read().strip()
-                    if err:
-                        log.warning("LiteRT stream backend %s stderr: %s", backend, err[:200])
+                err_text = "".join(stderr_lines).strip()
+                if err_text:
+                    log.warning("LiteRT stream backend %s stderr: %s", backend, err_text[:200])
 
             except FileNotFoundError:
                 log.warning("litert-lm CLI not available, using simulated stream")

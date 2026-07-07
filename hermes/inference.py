@@ -75,7 +75,7 @@ class HermesInference:
         """
         model = build_model(config)
         if checkpoint_path is not None:
-            ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=False)
+            ckpt = torch.load(checkpoint_path, map_location="cpu", weights_only=True)
             state_dict = ckpt.get("model", ckpt) if isinstance(ckpt, dict) else ckpt
             model.load_state_dict(state_dict, strict=False)
         return cls(model, tokenizer, device=device, preset_name=preset_name)

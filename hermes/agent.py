@@ -477,28 +477,95 @@ class HermesAgent:
         try:
             import math as _math
 
+            def _safe_eval(expr: str) -> str:
+                """Evaluate mathematical expressions using a safe AST walker.
+                  
+                Instead of eval(), this function manually walks the parsed AST and
+                evaluates only known-safe operations and math functions. This prevents
+                sandbox escape attacks that can bypass eval() with restricted __builtins__.
+                """
+                import ast as _ast
+                import operator as _operator
+
+                # Allowed math functions
+                _safe_funcs = {
+                    "abs": abs, "round": round, "int": int, "float": float,
+                    "min": min, "max": max, "sum": sum, "pow": pow,
+                }
+                for _k in dir(_math):
+                    if not _k.startswith("_") and callable(getattr(_math, _k)):
+                        _safe_funcs[_k] = getattr(_math, _k)
+
+                # Allowed operators
+                _bin_ops = {
+                    _ast.Add: _operator.add, _ast.Sub: _operator.sub,
+                    _ast.Mult: _operator.mul, _ast.Div: _operator.truediv,
+                    _ast.FloorDiv: _operator.floordiv, _ast.Mod: _operator.mod,
+                    _ast.Pow: _operator.pow, _ast.LShift: _operator.lshift,
+                    _ast.RShift: _operator.rshift, _ast.BitOr: _operator.or_,
+                    _ast.BitXor: _operator.xor, _ast.BitAnd: _operator.and_,
+                }
+                _unary_ops = {
+                    _ast.UAdd: _operator.pos, _ast.USub: _operator.neg,
+                    _ast.Not: _operator.not_,
+                }
+
+                def _eval_node(node):
+                    if isinstance(node, _ast.Constant):
+                        return node.value
+                    elif isinstance(node, _ast.Num):
+                        return node.n
+                    elif isinstance(node, _ast.BinOp):
+                        return _bin_ops[type(node.op)](_eval_node(node.left), _eval_node(node.right))
+                    elif isinstance(node, _ast.UnaryOp):
+                        return _unary_ops[type(node.op)](_eval_node(node.operand))
+                    elif isinstance(node, _ast.Call):
+                        if not isinstance(node.func, _ast.Name):
+                            raise ValueError("Only simple function calls allowed")
+                        name = node.func.id
+                        if name not in _safe_funcs:
+                            raise ValueError(f"Disallowed function: {name}")
+                        args = [_eval_node(a) for a in node.args]
+                        kwargs = {kw.arg: _eval_node(kw.value) for kw in node.keywords if kw.arg}
+                        return _safe_funcs[name](*args, **kwargs)
+                    elif isinstance(node, _ast.Expression):
+                        return _eval_node(node.body)
+                    elif isinstance(node, _ast.Name):
+                        # Handle constants like pi, e, etc.
+                        if node.id in _safe_funcs:
+                            return _safe_funcs[node.id]
+                        node_id = node.id
+                        if node_id == "pi":
+                            return _math.pi
+                        if node_id == "e":
+                            return _math.e
+                        if node_id == "tau":
+                            return _math.tau
+                        if node_id == "inf":
+                            return _math.inf
+                        if node_id == "nan":
+                            return _math.nan
+                        raise ValueError(f"Unknown name: {node.id}")
+                    elif isinstance(node, _ast.List):
+                        return [_eval_node(el) for el in node.elts]
+                    elif isinstance(node, _ast.Tuple):
+                        return tuple(_eval_node(el) for el in node.elts)
+                    elif isinstance(node, _ast.Attribute):
+                        # Allow constants like math.pi (resolved during init, but guard anyway)
+                        raise ValueError("Attribute access not allowed")
+                    else:
+                        raise ValueError(f"Disallowed syntax: {type(node).__name__}")
+
+                try:
+                    tree = _ast.parse(expr.strip(), mode="eval")
+                    result = _eval_node(tree)
+                    return str(result)
+                except Exception as e:
+                    return json.dumps({"error": f"Calculator error: {e}"})
+
             def _calc(expr: str) -> str:
-                """Evaluate mathematical expressions safely."""
-                import ast
-                safe = {"abs": abs, "round": round, "int": int, "float": float,
-                        "min": min, "max": max, "sum": sum, "pow": pow}
-                safe.update({k: getattr(_math, k) for k in dir(_math)
-                            if not k.startswith("_") and callable(getattr(_math, k))})
-                safe_funcs = set(safe.keys())
-                tree = ast.parse(expr.strip(), mode="eval")
-                allowed_ops = (ast.Expression, ast.BinOp, ast.UnaryOp, ast.Num, ast.Constant,
-                               ast.Add, ast.Sub, ast.Mult, ast.Div, ast.FloorDiv, ast.Mod,
-                               ast.Pow, ast.USub, ast.UAdd, ast.Call, ast.Name, ast.Load,
-                               ast.Attribute)
-                for node in ast.walk(tree):
-                    if not isinstance(node, allowed_ops):
-                        return json.dumps({"error": f"Disallowed syntax: {type(node).__name__}"})
-                    if isinstance(node, ast.Call):
-                        if not isinstance(node.func, ast.Name):
-                            return json.dumps({"error": "Only simple function calls allowed"})
-                        if node.func.id not in safe_funcs:
-                            return json.dumps({"error": f"Disallowed function: {node.func.id}"})
-                return str(eval(compile(tree, "<string>", "eval"), {"__builtins__": {}}, safe))
+                """Evaluate mathematical expressions safely using AST-based evaluator."""
+                return _safe_eval(expr)
 
             self.register_tool(
                 "calculator",
