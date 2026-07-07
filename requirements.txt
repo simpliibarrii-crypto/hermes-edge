@@ -1,7 +1,7 @@
 # Core: LiteRT-LM runtime & conversion
 litert-lm>=0.13.0
 litert-torch>=0.9.0
-ai-edge-litert>=2.1.5
+ai-edge-litert>=2.1.6
 
 # Model & tokenizer
 torch>=2.4.0
