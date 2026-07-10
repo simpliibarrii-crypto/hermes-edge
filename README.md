@@ -1,4 +1,4 @@
-<p align="center">\n  <strong><a href="https://barry-ai-public.simpliibarrii.chatgpt.site">Explore the complete AI research & projects portfolio →</a></strong>\n</p>\n\n---
+---
 language:
 - en
 license: apache-2.0
@@ -23,6 +23,10 @@ pipeline_tag: text-generation
 short_description: GPU-first local edge AI agent with LiteRT-LM, Gemma/Gemini Nano routing, and benchmark-gated acceleration.
 base_model: google/gemma-3n-E2B-it
 ---
+<p align="center">
+  <strong><a href="https://barry-ai-public.simpliibarrii.chatgpt.site">Explore the complete AI research & projects portfolio →</a></strong>
+</p>
+
 
 # 🦊 Hermes Edge
 
