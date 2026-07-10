@@ -1,4 +1,4 @@
----
+<p align="center">\n  <strong><a href="https://barry-ai-public.simpliibarrii.chatgpt.site">Explore the complete AI research & projects portfolio →</a></strong>\n</p>\n\n---
 language:
 - en
 license: apache-2.0
