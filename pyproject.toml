@@ -7,7 +7,7 @@ name = "hermes-edge"
 version = "0.3.0"
 description = "Local-first edge AI agent for Android and iPhone-class devices with LiteRT-LM, Gemma/Gemini Nano routing, and benchmark-gated speculative decoding"
 authors = [
-    { name = "Barry Clerjuste", email = "bclerjuste@gmail.com" },
+    { name = "Barry Clerjuste" },
 ]
 license = { text = "Apache-2.0" }
 readme = "README.md"
