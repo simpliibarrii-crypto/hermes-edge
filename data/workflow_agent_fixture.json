@@ -1,0 +1,18 @@
+{
+  "scenario_id": "local-variant-calling-equivalence",
+  "backend": "cpu",
+  "affinity": "balanced",
+  "timeout_ms": 100,
+  "poll_interval_ms": 10,
+  "events": [
+    {"offset_ms": 0, "status": "queued"},
+    {"offset_ms": 15, "status": "running"},
+    {"offset_ms": 37, "status": "succeeded"}
+  ],
+  "actual_terminal_artifacts": [
+    {"path": "run-a/results/final.vcf", "content": "chr1\t101\t.\tA\tG\t60\tPASS"}
+  ],
+  "expected_terminal_artifacts": [
+    {"path": "workflow-b/output/calls.vcf", "content": "chr1\t101\t.\tA\tG\t60\tPASS"}
+  ]
+}
