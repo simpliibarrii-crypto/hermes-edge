@@ -21,6 +21,8 @@ jobs:
       - uses: actions/setup-python@v6
         with:
           python-version: ${{ matrix.python-version }}
+      - name: Public release scan
+        run: python scripts/public_release_check.py
       - name: Install
         run: |
           python -m pip install --upgrade pip
@@ -28,8 +30,11 @@ jobs:
           pip install -e ".[dev]"
       - name: Lint
         run: ruff check hermes/ scripts/ --ignore=E501
-      - name: Type check
-        run: mypy hermes/ --ignore-missing-imports || true
+      - name: Compile Python
+        run: python -m compileall -q hermes scripts tests
+      - name: Type check advisory
+        run: mypy hermes/ --ignore-missing-imports
+        continue-on-error: true
       - name: Tests
         run: pytest tests/ -v
 
@@ -38,18 +43,29 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+      - name: Public release scan
+        run: python scripts/public_release_check.py
+      - name: Full-history Gitleaks
+        run: |
+          docker run --rm \
+            -v "$PWD:/repo" \
+            zricethezav/gitleaks:latest detect \
+            --source=/repo \
+            --redact \
+            --verbose
       - uses: actions/setup-python@v6
         with:
           python-version: '3.11'
-      - name: Install
+      - name: Install audit tools
         run: |
           python -m pip install --upgrade pip
           pip install bandit pip-audit
-          pip install -e ".[dev]"
       - name: Bandit SAST
-        run: bandit -r hermes/ -ll -c pyproject.toml || true
-      - name: pip-audit
-        run: pip-audit || true
+        run: bandit -r hermes/ -ll -c pyproject.toml
+      - name: Dependency audit
+        run: pip-audit -r requirements.txt --progress-spinner=off
 
   node:
     name: JS skills syntax
