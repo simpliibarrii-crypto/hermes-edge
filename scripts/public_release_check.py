@@ -20,6 +20,10 @@ PATTERNS = {
     ),
 }
 
+PHONE_CONTEXT = re.compile(
+    r"(?i)\b(?:phone|telephone|tel|mobile|cell|contact|call|sms|whatsapp)\b"
+)
+
 TEXT_SUFFIXES = {
     ".c", ".cfg", ".conf", ".css", ".env", ".example", ".go", ".h", ".html",
     ".ini", ".java", ".js", ".json", ".jsx", ".md", ".mjs", ".py", ".rs",
@@ -36,6 +40,23 @@ def is_text_candidate(path: Path) -> bool:
     return path.name in {"Dockerfile", "Makefile", "LICENSE"} or path.suffix.lower() in TEXT_SUFFIXES
 
 
+def is_phone_number_like(line: str, match: re.Match[str]) -> bool:
+    """Distinguish likely phone data from whitespace-separated numeric arguments."""
+
+    candidate = match.group(0).strip()
+    has_context = PHONE_CONTEXT.search(line) is not None
+    has_phone_punctuation = any(character in candidate for character in "+().-")
+    is_contiguous = not any(character.isspace() for character in candidate)
+    is_standalone = candidate == line.strip()
+    return has_context or has_phone_punctuation or is_contiguous or is_standalone
+
+
+def should_report(label: str, line: str, match: re.Match[str]) -> bool:
+    if label == "phone-number-like personal data":
+        return is_phone_number_like(line, match)
+    return True
+
+
 def main() -> int:
     findings: list[str] = []
     for path in tracked_files():
@@ -47,7 +68,8 @@ def main() -> int:
             continue
         for line_number, line in enumerate(text.splitlines(), 1):
             for label, pattern in PATTERNS.items():
-                if pattern.search(line):
+                match = pattern.search(line)
+                if match and should_report(label, line, match):
                     findings.append(f"{path}:{line_number}: possible {label}")
 
     if findings:
