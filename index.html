@@ -1,0 +1,480 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Hermes Edge is an open-source, local-first AI agent runtime with benchmark-gated routing and deterministic workflow evaluation.">
+  <meta name="theme-color" content="#090b13">
+  <title>Hermes Edge — Local-first edge AI</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      --bg: #070810;
+      --panel: rgba(20, 23, 38, 0.76);
+      --panel-strong: rgba(26, 30, 49, 0.94);
+      --line: rgba(183, 190, 255, 0.15);
+      --text: #f3f5ff;
+      --muted: #adb4cf;
+      --violet: #a78bfa;
+      --indigo: #6d7cff;
+      --cyan: #62d7ff;
+      --green: #76e6b2;
+      --shadow: 0 24px 80px rgba(0, 0, 0, 0.38);
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+    }
+
+    * { box-sizing: border-box; }
+
+    html { scroll-behavior: smooth; }
+
+    body {
+      margin: 0;
+      min-height: 100vh;
+      background:
+        radial-gradient(circle at 18% 12%, rgba(109, 124, 255, 0.18), transparent 34rem),
+        radial-gradient(circle at 85% 28%, rgba(98, 215, 255, 0.11), transparent 30rem),
+        radial-gradient(circle at 55% 100%, rgba(167, 139, 250, 0.13), transparent 38rem),
+        var(--bg);
+      color: var(--text);
+      line-height: 1.6;
+    }
+
+    a { color: inherit; }
+
+    .shell {
+      width: min(1120px, calc(100% - 36px));
+      margin: 0 auto;
+    }
+
+    .nav {
+      position: sticky;
+      top: 0;
+      z-index: 20;
+      border-bottom: 1px solid var(--line);
+      background: rgba(7, 8, 16, 0.78);
+      backdrop-filter: blur(18px);
+    }
+
+    .nav-inner {
+      min-height: 68px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 20px;
+    }
+
+    .brand {
+      display: inline-flex;
+      align-items: center;
+      gap: 12px;
+      text-decoration: none;
+      font-weight: 780;
+      letter-spacing: -0.02em;
+    }
+
+    .brand-mark {
+      width: 34px;
+      height: 34px;
+      display: grid;
+      place-items: center;
+      border: 1px solid rgba(167, 139, 250, 0.45);
+      border-radius: 11px;
+      background: linear-gradient(145deg, rgba(109, 124, 255, 0.28), rgba(167, 139, 250, 0.12));
+      box-shadow: 0 10px 32px rgba(109, 124, 255, 0.2);
+    }
+
+    .nav-links {
+      display: flex;
+      align-items: center;
+      gap: 18px;
+      color: var(--muted);
+      font-size: 0.93rem;
+    }
+
+    .nav-links a {
+      text-decoration: none;
+    }
+
+    .nav-links a:hover,
+    .nav-links a:focus-visible { color: var(--text); }
+
+    .hero {
+      padding: 104px 0 72px;
+      display: grid;
+      grid-template-columns: 1.25fr 0.75fr;
+      gap: 58px;
+      align-items: center;
+    }
+
+    .eyebrow {
+      display: inline-flex;
+      align-items: center;
+      gap: 9px;
+      padding: 7px 11px;
+      border: 1px solid rgba(118, 230, 178, 0.25);
+      border-radius: 999px;
+      background: rgba(118, 230, 178, 0.07);
+      color: #baf5d8;
+      font-size: 0.82rem;
+      font-weight: 700;
+      letter-spacing: 0.045em;
+      text-transform: uppercase;
+    }
+
+    .pulse {
+      width: 8px;
+      height: 8px;
+      border-radius: 999px;
+      background: var(--green);
+      box-shadow: 0 0 0 5px rgba(118, 230, 178, 0.12);
+    }
+
+    h1 {
+      margin: 24px 0 22px;
+      max-width: 760px;
+      font-size: clamp(3.35rem, 8vw, 6.5rem);
+      line-height: 0.94;
+      letter-spacing: -0.065em;
+    }
+
+    .gradient-text {
+      background: linear-gradient(100deg, #ffffff 4%, #c8ceff 44%, #8fe3ff 100%);
+      -webkit-background-clip: text;
+      background-clip: text;
+      color: transparent;
+    }
+
+    .hero-copy {
+      max-width: 720px;
+      margin: 0;
+      color: var(--muted);
+      font-size: clamp(1.05rem, 2vw, 1.25rem);
+    }
+
+    .actions {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 12px;
+      margin-top: 34px;
+    }
+
+    .button {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-height: 48px;
+      padding: 0 18px;
+      border: 1px solid var(--line);
+      border-radius: 13px;
+      text-decoration: none;
+      font-weight: 720;
+      transition: transform 160ms ease, border-color 160ms ease, background 160ms ease;
+    }
+
+    .button:hover,
+    .button:focus-visible {
+      transform: translateY(-2px);
+      border-color: rgba(167, 139, 250, 0.55);
+    }
+
+    .button-primary {
+      border-color: rgba(109, 124, 255, 0.68);
+      background: linear-gradient(135deg, var(--indigo), #895df5);
+      box-shadow: 0 14px 38px rgba(109, 124, 255, 0.24);
+    }
+
+    .button-secondary { background: rgba(255, 255, 255, 0.035); }
+
+    .terminal {
+      position: relative;
+      overflow: hidden;
+      border: 1px solid var(--line);
+      border-radius: 22px;
+      background: linear-gradient(155deg, rgba(26, 30, 49, 0.94), rgba(10, 12, 23, 0.94));
+      box-shadow: var(--shadow);
+    }
+
+    .terminal::after {
+      content: "";
+      position: absolute;
+      inset: auto -80px -100px auto;
+      width: 220px;
+      height: 220px;
+      border-radius: 50%;
+      background: rgba(109, 124, 255, 0.14);
+      filter: blur(18px);
+    }
+
+    .terminal-bar {
+      height: 46px;
+      display: flex;
+      align-items: center;
+      gap: 7px;
+      padding: 0 16px;
+      border-bottom: 1px solid var(--line);
+      background: rgba(255, 255, 255, 0.025);
+    }
+
+    .dot { width: 9px; height: 9px; border-radius: 50%; background: rgba(255,255,255,0.16); }
+    .dot:nth-child(1) { background: #ff7c83; }
+    .dot:nth-child(2) { background: #f5cd70; }
+    .dot:nth-child(3) { background: #70d99a; }
+
+    pre {
+      position: relative;
+      z-index: 1;
+      margin: 0;
+      padding: 28px;
+      overflow-x: auto;
+      color: #dce0ff;
+      font: 0.89rem/1.85 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    }
+
+    .prompt { color: var(--cyan); }
+    .ok { color: var(--green); }
+    .dim { color: #7f88a8; }
+
+    section { padding: 54px 0; }
+
+    .section-head {
+      max-width: 720px;
+      margin-bottom: 28px;
+    }
+
+    h2 {
+      margin: 0 0 10px;
+      font-size: clamp(2rem, 4vw, 3.15rem);
+      line-height: 1.08;
+      letter-spacing: -0.045em;
+    }
+
+    .section-head p { margin: 0; color: var(--muted); }
+
+    .grid {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 16px;
+    }
+
+    .card {
+      min-height: 210px;
+      padding: 24px;
+      border: 1px solid var(--line);
+      border-radius: 18px;
+      background: var(--panel);
+      box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+    }
+
+    .card-kicker {
+      color: var(--cyan);
+      font: 700 0.76rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace;
+      letter-spacing: 0.07em;
+      text-transform: uppercase;
+    }
+
+    .card h3 {
+      margin: 18px 0 10px;
+      font-size: 1.2rem;
+      letter-spacing: -0.025em;
+    }
+
+    .card p { margin: 0; color: var(--muted); }
+
+    .contract {
+      display: grid;
+      grid-template-columns: 0.9fr 1.1fr;
+      gap: 18px;
+      align-items: stretch;
+    }
+
+    .contract-panel {
+      padding: 28px;
+      border: 1px solid var(--line);
+      border-radius: 20px;
+      background: var(--panel-strong);
+    }
+
+    .metric-list {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+      margin-top: 22px;
+    }
+
+    .metric {
+      padding: 14px;
+      border: 1px solid var(--line);
+      border-radius: 12px;
+      color: #d9ddf4;
+      background: rgba(255, 255, 255, 0.025);
+      font-size: 0.91rem;
+    }
+
+    .notice {
+      margin-top: 20px;
+      padding: 14px 16px;
+      border-left: 3px solid var(--violet);
+      background: rgba(167, 139, 250, 0.07);
+      color: #c6cbe4;
+      font-size: 0.92rem;
+    }
+
+    .release {
+      margin: 54px 0 96px;
+      padding: 34px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 28px;
+      border: 1px solid rgba(109, 124, 255, 0.35);
+      border-radius: 24px;
+      background: linear-gradient(135deg, rgba(109, 124, 255, 0.14), rgba(167, 139, 250, 0.07));
+      box-shadow: var(--shadow);
+    }
+
+    .release p { margin: 8px 0 0; color: var(--muted); }
+
+    footer {
+      padding: 28px 0 42px;
+      border-top: 1px solid var(--line);
+      color: #8991af;
+      font-size: 0.88rem;
+    }
+
+    .footer-inner {
+      display: flex;
+      justify-content: space-between;
+      gap: 18px;
+      flex-wrap: wrap;
+    }
+
+    @media (max-width: 860px) {
+      .hero { grid-template-columns: 1fr; padding-top: 76px; }
+      .terminal { max-width: 620px; }
+      .grid { grid-template-columns: 1fr; }
+      .contract { grid-template-columns: 1fr; }
+      .release { align-items: flex-start; flex-direction: column; }
+    }
+
+    @media (max-width: 620px) {
+      .nav-links a:not(.keep) { display: none; }
+      h1 { font-size: clamp(3rem, 17vw, 4.7rem); }
+      .hero { gap: 40px; }
+      .metric-list { grid-template-columns: 1fr; }
+      .card, .contract-panel, .release { padding: 22px; }
+    }
+  </style>
+</head>
+<body>
+  <header class="nav">
+    <div class="shell nav-inner">
+      <a class="brand" href="#top" aria-label="Hermes Edge home">
+        <span class="brand-mark" aria-hidden="true">🦊</span>
+        <span>Hermes Edge</span>
+      </a>
+      <nav class="nav-links" aria-label="Primary navigation">
+        <a href="#architecture">Architecture</a>
+        <a href="#benchmarks">Benchmarks</a>
+        <a class="keep" href="https://github.com/simpliibarrii-crypto/hermes-edge">GitHub ↗</a>
+      </nav>
+    </div>
+  </header>
+
+  <main id="top">
+    <div class="shell hero">
+      <div>
+        <div class="eyebrow"><span class="pulse"></span> Open-source · local-first</div>
+        <h1><span class="gradient-text">Edge intelligence, measured.</span></h1>
+        <p class="hero-copy">
+          Hermes Edge is a research runtime for local AI agents across phones, laptops, and edge boxes. It routes deterministic tools first, keeps model execution local when supported, and ties public claims to reproducible benchmark evidence.
+        </p>
+        <div class="actions">
+          <a class="button button-primary" href="https://github.com/simpliibarrii-crypto/hermes-edge">Explore the repository</a>
+          <a class="button button-secondary" href="https://huggingface.co/bclermo/hermes-edge">View on Hugging Face</a>
+        </div>
+      </div>
+
+      <div class="terminal" aria-label="Hermes Edge install example">
+        <div class="terminal-bar" aria-hidden="true"><span class="dot"></span><span class="dot"></span><span class="dot"></span></div>
+        <pre><span class="prompt">$</span> git clone \
+  github.com/simpliibarrii-crypto/hermes-edge
+<span class="prompt">$</span> cd hermes-edge
+<span class="prompt">$</span> python -m venv .venv
+<span class="prompt">$</span> pip install -e ".&#91;dev&#93;"
+<span class="prompt">$</span> python -m pytest tests -q
+
+<span class="ok">✓ local routing</span>
+<span class="ok">✓ evidence-gated benchmarks</span>
+<span class="ok">✓ deterministic workflow checks</span>
+<span class="dim">Hosted page: project documentation only</span></pre>
+      </div>
+    </div>
+
+    <section id="architecture">
+      <div class="shell">
+        <div class="section-head">
+          <h2>Designed to spend compute carefully.</h2>
+          <p>Hermes treats larger model calls as a later route, not the default reflex.</p>
+        </div>
+        <div class="grid">
+          <article class="card">
+            <div class="card-kicker">01 · Tool first</div>
+            <h3>Deterministic work stays deterministic</h3>
+            <p>Arithmetic, formatting, retrieval, and local utilities can resolve before an expensive model is loaded.</p>
+          </article>
+          <article class="card">
+            <div class="card-kicker">02 · Local policy</div>
+            <h3>Route by device evidence</h3>
+            <p>Profiles describe supported runtime, memory, backend, and model paths without claiming hardware performance that has not been measured.</p>
+          </article>
+          <article class="card">
+            <div class="card-kicker">03 · Auditable output</div>
+            <h3>Judge terminal artifacts</h3>
+            <p>Workflow benchmarks compare canonical output contents, not cosmetic directory layouts or task names.</p>
+          </article>
+        </div>
+      </div>
+    </section>
+
+    <section id="benchmarks">
+      <div class="shell contract">
+        <div class="contract-panel">
+          <div class="card-kicker">Benchmark contract</div>
+          <h2>Evidence before acceleration claims.</h2>
+          <p class="hero-copy">A design can be promising. A performance statement needs a device, backend, workload, and reproducible result.</p>
+          <div class="notice">This hosted page documents the project. It does not execute the local model and is not a clinical or device-performance validation.</div>
+        </div>
+        <div class="contract-panel">
+          <div class="card-kicker">Required proof</div>
+          <div class="metric-list">
+            <div class="metric">Time to first token</div>
+            <div class="metric">Decode tokens per second</div>
+            <div class="metric">Prefill throughput</div>
+            <div class="metric">Peak process memory</div>
+            <div class="metric">Exact device and backend</div>
+            <div class="metric">Thermal condition</div>
+            <div class="metric">Event versus polling telemetry</div>
+            <div class="metric">Terminal-output equivalence</div>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <div class="shell release">
+      <div>
+        <div class="card-kicker">Current public release</div>
+        <h2>Deterministic workflow-agent evaluation</h2>
+        <p>Event-driven monitoring, polling baselines, backend and affinity allowlists, and canonical terminal-artifact checks are now part of the repository.</p>
+      </div>
+      <a class="button button-primary" href="https://github.com/simpliibarrii-crypto/hermes-edge">Read the code</a>
+    </div>
+  </main>
+
+  <footer>
+    <div class="shell footer-inner">
+      <span>Hermes Edge · Apache-2.0</span>
+      <span>Local-first core · optional hosted documentation</span>
+    </div>
+  </footer>
+</body>
+</html>
