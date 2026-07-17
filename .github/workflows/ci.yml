@@ -42,7 +42,18 @@ jobs:
           pip install torch sentencepiece pytest ruff mypy bandit
           pip install -e ".[dev]"
       - name: Lint
-        run: ruff check hermes/ scripts/ --ignore=E501
+        id: lint
+        run: ruff check hermes/ scripts/ --ignore=E501 2>&1 | tee ruff_findings.txt
+        continue-on-error: true
+      - name: Upload lint findings
+        if: steps.lint.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: ruff-findings-${{ matrix.python-version }}
+          path: ruff_findings.txt
+      - name: Enforce lint
+        if: steps.lint.outcome == 'failure'
+        run: exit 1
       - name: Compile Python
         run: python -m compileall -q hermes scripts tests
       - name: Type check advisory
@@ -60,7 +71,18 @@ jobs:
           fetch-depth: 0
           show-progress: false
       - name: Public release scan
-        run: python scripts/public_release_check.py
+        id: security-public-release-scan
+        run: python scripts/public_release_check.py 2>&1 | tee security_release_scan_findings.txt
+        continue-on-error: true
+      - name: Upload security release scan findings
+        if: steps.security-public-release-scan.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: security-release-scan-findings
+          path: security_release_scan_findings.txt
+      - name: Enforce security release scan
+        if: steps.security-public-release-scan.outcome == 'failure'
+        run: exit 1
       - name: Full-history Gitleaks
         run: |
           docker run --rm \
