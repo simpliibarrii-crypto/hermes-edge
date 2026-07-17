@@ -60,7 +60,18 @@ jobs:
         run: mypy hermes/ --ignore-missing-imports
         continue-on-error: true
       - name: Tests
-        run: pytest tests/ -v
+        id: tests
+        run: pytest tests/ -v 2>&1 | tee pytest_findings.txt
+        continue-on-error: true
+      - name: Upload test findings
+        if: steps.tests.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: pytest-findings-${{ matrix.python-version }}
+          path: pytest_findings.txt
+      - name: Enforce tests
+        if: steps.tests.outcome == 'failure'
+        run: exit 1
 
   security:
     name: Security scan
@@ -99,7 +110,18 @@ jobs:
           python -m pip install --upgrade pip
           pip install bandit pip-audit
       - name: Bandit SAST
-        run: bandit -r hermes/ -ll -c pyproject.toml
+        id: bandit
+        run: bandit -r hermes/ -ll -c pyproject.toml 2>&1 | tee bandit_findings.txt
+        continue-on-error: true
+      - name: Upload Bandit findings
+        if: steps.bandit.outcome == 'failure'
+        uses: actions/upload-artifact@v7
+        with:
+          name: bandit-findings
+          path: bandit_findings.txt
+      - name: Enforce Bandit
+        if: steps.bandit.outcome == 'failure'
+        run: exit 1
       - name: Dependency audit
         run: pip-audit -r requirements.txt --progress-spinner=off
 
