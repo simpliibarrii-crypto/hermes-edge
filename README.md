@@ -4,7 +4,7 @@ language:
 license: apache-2.0
 title: Hermes Edge
 emoji: ⚡
-colorFrom: black
+colorFrom: gray
 colorTo: red
 tags:
 - hermes-edge
