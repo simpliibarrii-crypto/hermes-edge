@@ -3,9 +3,9 @@ language:
 - en
 license: apache-2.0
 title: Hermes Edge
-emoji: 🦊
-colorFrom: indigo
-colorTo: purple
+emoji: ⚡
+colorFrom: black
+colorTo: red
 tags:
 - hermes-edge
 - mobile-ai
@@ -15,39 +15,53 @@ tags:
 - gpu-first
 - litert-lm
 - gemma
-- gemini-nano
 - tool-calling
 - local-first
 library_name: custom
 pipeline_tag: text-generation
-short_description: GPU-first local edge AI agent with LiteRT-LM, Gemma/Gemini Nano routing, and benchmark-gated acceleration.
+short_description: Benchmark-gated local AI routing for phones, laptops, tablets, and edge boxes.
 base_model: google/gemma-3n-E2B-it
 ---
-<p align="center">
-  <strong><a href="https://barry-ai-public.simpliibarrii.chatgpt.site">Explore the complete AI research & projects portfolio →</a></strong>
-</p>
-
-
-# 🦊 Hermes Edge
-
-**Hermes Edge is a GPU-first, local-first AI agent runtime for phones, tablets, laptops, and edge boxes.**
-It routes work to deterministic tools first, then local Google-edge models through LiteRT-LM, Gemma 3n, Gemma 4 MTP when proven, or Gemini Nano/AICore when Android exposes it.
-
-No cloud account is required for the core agent. Heavy model, conversion, Space, and audit packages are explicit optional extras.
 
 <p align="center">
-  <img src="assets/hermes-logo.svg" alt="Hermes Edge Logo" width="180" height="180" />
+  <img src="assets/hermes-brand-header.svg" alt="Hermes Edge — benchmark-gated local inference" width="100%" />
 </p>
 
 <p align="center">
-  <a href="https://github.com/simpliibarrii-crypto/hermes-edge"><img src="https://img.shields.io/badge/GitHub-Hermes%20Edge-black?style=flat-square" alt="GitHub"></a>
-  <a href="https://huggingface.co/bclermo/hermes-edge"><img src="https://img.shields.io/badge/%F0%9F%A4%97-Hugging%20Face-FFD21E?style=flat-square" alt="Hugging Face"></a>
-  <a href="LICENSE"><img src="https://img.shields.io/badge/License-Apache%202.0-blue?style=flat-square" alt="License"></a>
+  <a href="https://simpliibarrii-crypto.github.io/project.html?project=hermes-edge"><img alt="Routing demo" src="https://img.shields.io/badge/CASE_STUDY-ROUTING_DEMO-C8273F?style=for-the-badge&labelColor=050505"></a>
+  <a href="https://huggingface.co/bclermo/hermes-edge"><img alt="Hugging Face" src="https://img.shields.io/badge/HUGGING_FACE-MODEL_PAGE-C9AD7D?style=for-the-badge&labelColor=050505"></a>
+  <a href="LICENSE"><img alt="License" src="https://img.shields.io/badge/LICENSE-APACHE_2.0-303036?style=for-the-badge&labelColor=050505"></a>
 </p>
+
+> **Hermes Edge** is the device-aware execution layer in the Raven ecosystem. It routes deterministic tools before model calls, then selects a local model profile and backend according to available memory, runtime support, and benchmark evidence.
+
+**Maturity:** Active v0.3 research and development project. Device coverage is still expanding. No universal-hardware or production-readiness claim is made.
+
+## What it proves
+
+- Tool-first routing can avoid unnecessary inference.
+- Device memory and runtime availability can shape model selection explicitly.
+- LiteRT-LM, GPU, Vulkan, Metal, ANE, AICore, and CPU paths can be described as ordered policies rather than magical acceleration.
+- Public performance claims can require reproducible benchmark metadata.
+- Route and fallback decisions can produce portable audit records for Home for AI and Raven.
+
+## Routing model
+
+```mermaid
+flowchart LR
+    Task[Task request] --> Tool{Deterministic tool?}
+    Tool -->|yes| Execute[Execute locally]
+    Tool -->|no| Memory[Inspect memory and device]
+    Memory --> Profile[Select model profile]
+    Profile --> Backend[GPU / Vulkan / Metal / ANE / CPU]
+    Backend --> Receipt[Route and benchmark receipt]
+
+    style Tool fill:#151518,stroke:#C8273F,color:#F4EFE7
+    style Profile fill:#151518,stroke:#C9AD7D,color:#F4EFE7
+    style Receipt fill:#151518,stroke:#78D7A0,color:#F4EFE7
+```
 
 ## Fast install
-
-### Core agent and tests, any desktop
 
 ```bash
 git clone https://github.com/simpliibarrii-crypto/hermes-edge.git
@@ -58,141 +72,68 @@ pip install -e ".[dev]"
 pytest tests/test_edge_policy.py tests/test_agent_edge_routing.py tests/test_litert_backend.py -q
 ```
 
-Windows PowerShell:
-
-```powershell
-git clone https://github.com/simpliibarrii-crypto/hermes-edge.git
-cd hermes-edge
-py -m venv .venv
-.\.venv\Scripts\Activate.ps1
-pip install -e ".[dev]"
-pytest tests/test_edge_policy.py tests/test_agent_edge_routing.py tests/test_litert_backend.py -q
-```
-
-### Local model inference with LiteRT-LM
+Install the local model runtime only where needed:
 
 ```bash
 pip install -e ".[runtime]"
 hermes --model dist/hermes-mobile-270m-int4.litertlm --backend auto
 ```
 
-`--backend auto` is GPU-primary. Hermes tries `gpu`, then `vulkan`, `metal`, `ane`, and finally `cpu` if needed.
+`--backend auto` is GPU-primary. Hermes tries supported accelerated delegates and preserves a CPU fallback where available.
 
-### Conversion/build tools
-
-```bash
-pip install -e ".[model,conversion,runtime]"
-```
-
-### Hugging Face Space demo
+Additional extras:
 
 ```bash
-pip install -e ".[space,model]"
-python space_app.py
+pip install -e ".[model,conversion,runtime]"  # model and conversion tools
+pip install -e ".[space,model]"               # Hugging Face demo
+pip install -e ".[all]"                       # complete development stack
 ```
 
-### Everything, only if you need the full stack
-
-```bash
-pip install -e ".[all]"
-```
-
-## Device install guide
+## Device paths
 
 | Device | Recommended path | Backend priority |
 |---|---|---|
-| Android phone/tablet | LiteRT-LM or Google AI Edge Gallery import | GPU, Vulkan, AICore/Gemini Nano when available, CPU fallback |
-| iPhone/iPad | Google AI Edge Gallery import when LiteRT-LM bundle is available | GPU/Metal/ANE, CPU fallback |
-| macOS | Python package + LiteRT-LM runtime | GPU/Metal first, CPU fallback |
-| Linux laptop/edge box | Python package + LiteRT-LM runtime | GPU/Vulkan first, CPU fallback |
-| Windows | Python package for routing/dev, LiteRT runtime where available | GPU first, CPU fallback |
-
-## What changed in v0.3
-
-- GPU-primary LiteRT backend selection in `hermes/litert_model.py`
-- Google-edge policy in `hermes/edge_policy.py`
-- Runtime model selection wired through `ModelManager.resolve_edge()`
-- Tool-first routing before expensive model calls
-- Lightweight default install, with heavy dependencies moved to explicit extras
-- Benchmark contract for public performance claims
-
-## Architecture
-
-Hermes Edge keeps the big model as the last resort:
-
-1. **Deterministic tools first** - math, formatting, retrieval, local utilities.
-2. **Tiny routing layer** - classifies tool/chat/reasoning work without model load.
-3. **Google-edge local policy** - chooses Gemma 3n E2B/E4B, Gemini Nano/AICore, or benchmark-gated Gemma 4 MTP path.
-4. **GPU-primary LiteRT execution** - attempts GPU-class delegates first, with CPU fallback.
-5. **Benchmark gates** - no speed claims without TTFT, tok/s, memory, backend, and device proof.
-
-## Google-edge routing policy
-
-`hermes/edge_policy.py` is dependency-free and CI-friendly. It selects:
-
-- `tool-first` for tool tasks
-- `gemini-nano-aicore` only when system model is preferred and device support exists
-- `gemma-4-e2b-mtp-litert` only when MTP/speculative backend support is available
-- `gemma-3n-e4b-int4-litert` when memory allows
-- `gemma-3n-e2b-int4-litert` as practical baseline
-- `cloud-fallback-disabled` when no local route fits
+| Android | LiteRT-LM or compatible AI Edge import | GPU, Vulkan, AICore where exposed, CPU fallback |
+| iPhone / iPad | Compatible local bundle where available | GPU, Metal, ANE, CPU fallback |
+| macOS | Python package plus supported local runtime | GPU or Metal first, CPU fallback |
+| Linux edge box | Python package plus supported local runtime | GPU or Vulkan first, CPU fallback |
+| Windows | Routing and development package; runtime where supported | GPU first, CPU fallback |
 
 ## Benchmark contract
 
-Before any public speed claim, run and publish:
+A public result should include:
 
-| Metric | Required |
+- exact device and operating system
+- model profile and quantization
+- backend or delegate
+- time to first token
+- prefill and decode rate
+- peak memory
+- thermal state
+- fallback behaviour
+
+See [`docs/BENCHMARK_CONTRACT.md`](docs/BENCHMARK_CONTRACT.md).
+
+## Ecosystem role
+
+| System | Hermes relationship |
 |---|---|
-| TTFT | yes |
-| decode tokens/sec | yes |
-| prefill tokens/sec | yes |
-| peak memory | yes |
-| exact device | yes |
-| backend used | yes |
-| model profile | yes |
-| thermal state | yes |
+| [Home for AI](https://github.com/simpliibarrii-crypto/home-for-ai) | Displays route choices, runtime state, model profiles, and fallback traces |
+| [Raven AI](https://github.com/simpliibarrii-crypto/raven-ai) | Receives evidence-linked route metadata and scientific workflow execution |
+| [OpenClinical AI](https://github.com/simpliibarrii-crypto/openclinical-ai) | Provides bounded local execution for suitable consent-aware tasks |
+| [Raven BioComputer](https://github.com/simpliibarrii-crypto/simpliibarrii-crypto-raven-biocomputer) | Routes deterministic biology tools before larger models or remote calls |
+| JSpace Chain | Adds observable policy, risk, and reflection snapshots to route decisions |
 
-See `docs/BENCHMARK_CONTRACT.md`.
+## Contributing
 
-## Build a LiteRT-LM model
+Start with the **[reproducible edge benchmark matrix](https://github.com/simpliibarrii-crypto/hermes-edge/issues/26)**. Contributions should identify their exact hardware and avoid generalizing one result to other devices.
 
-```bash
-pip install -e ".[model,conversion,runtime]"
+## Public proof
 
-litert-torch export_hf   --model=google/gemma-3n-E2B-it   --output_dir=./dist   --quantization=dynamic_wi4_afp32   --cache_length=2048   --prefill_lengths=32
-```
-
-## Python usage
-
-```python
-from hermes.agent import ModelManager
-from hermes.edge_policy import DeviceTier
-
-manager = ModelManager(
-    backend="auto",
-    device_tier=DeviceTier.HIGH,
-    available_ram_mb=4096,
-    mtp_available=True,
-)
-
-manager.register("gemma-3n-e4b-int4-litert", "dist/gemma-3n-e4b-int4.litertlm")
-model = manager.resolve_edge("chat")
-print(manager.last_route_decision.profile.id)
-```
-
-## Development checks
-
-```bash
-pip install -e ".[dev]"
-python -m compileall -q hermes tests scripts
-pytest tests -q
-ruff check hermes/edge_policy.py hermes/agent.py hermes/litert_model.py tests/test_edge_policy.py tests/test_agent_edge_routing.py tests/test_litert_backend.py
-```
-
-## Project stance
-
-Hermes Edge is open-source and local-first. Paid APIs, cloud inference, app-store distribution, hosted Spaces, and proprietary services are optional distribution or demo paths, not required core operation.
+- [Branded project page](https://simpliibarrii-crypto.github.io/project.html?project=hermes-edge)
+- [Complete portfolio](https://simpliibarrii-crypto.github.io/)
+- [Research archive](https://simpliibarrii-crypto.github.io/research.html)
 
 ## License
 
-Apache-2.0. See `LICENSE`.
+Apache-2.0. See [LICENSE](LICENSE).
