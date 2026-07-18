@@ -99,4 +99,5 @@ with gr.Blocks(title="Hermes Edge Demo", css=BRAND_CSS) as app:
     clear_btn.click(lambda: ([], []), outputs=[chatbot, state])
 
 
-app.launch()
+if __name__ == "__main__":
+    app.launch()
