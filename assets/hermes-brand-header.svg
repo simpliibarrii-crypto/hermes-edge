@@ -1,0 +1,20 @@
+<svg width="1400" height="360" viewBox="0 0 1400 360" fill="none" xmlns="http://www.w3.org/2000/svg" role="img" aria-labelledby="title desc">
+  <title id="title">Hermes Edge</title><desc id="desc">Benchmark-gated local inference in the Raven AI ecosystem.</desc>
+  <defs>
+    <radialGradient id="bg" cx="0" cy="0" r="1" gradientUnits="userSpaceOnUse" gradientTransform="translate(1150 40) rotate(143) scale(600 470)"><stop stop-color="#35131C"/><stop offset=".5" stop-color="#0D0D0F"/><stop offset="1" stop-color="#050505"/></radialGradient>
+    <linearGradient id="red" x1="0" y1="0" x2="1" y2="1"><stop stop-color="#F04460"/><stop offset="1" stop-color="#8A1528"/></linearGradient>
+    <pattern id="grid" width="38" height="38" patternUnits="userSpaceOnUse"><path d="M38 0H0V38" stroke="#FFFFFF" stroke-opacity=".035"/></pattern>
+  </defs>
+  <rect width="1400" height="360" rx="28" fill="url(#bg)"/><rect width="1400" height="360" rx="28" fill="url(#grid)"/><rect x="1" y="1" width="1398" height="358" rx="27" stroke="#FFFFFF" stroke-opacity=".08"/>
+  <text x="78" y="72" fill="#C8273F" font-family="ui-monospace, monospace" font-size="13" letter-spacing="4">RAVEN ECOSYSTEM / EDGE EXECUTION</text>
+  <text x="78" y="160" fill="#F4EFE7" font-family="Georgia, serif" font-size="64" font-weight="600">Hermes Edge</text>
+  <text x="80" y="208" fill="#C9AD7D" font-family="Avenir Next, Segoe UI, Arial, sans-serif" font-size="25">Benchmark-gated local inference.</text>
+  <line x1="80" y1="242" x2="650" y2="242" stroke="url(#red)" stroke-width="3"/>
+  <text x="80" y="283" fill="#8F8A83" font-family="ui-monospace, monospace" font-size="15" letter-spacing="1">TOOLS FIRST  ·  DEVICE-AWARE ROUTING  ·  MEASURED CLAIMS</text>
+  <g transform="translate(1025 52)">
+    <circle cx="130" cy="126" r="112" stroke="#C9AD7D" stroke-opacity=".16"/><circle cx="130" cy="126" r="72" fill="#0A0A0C" stroke="#C8273F" stroke-opacity=".65"/>
+    <path d="M86 150L118 96L139 131L174 76" stroke="url(#red)" stroke-width="8" stroke-linecap="round" stroke-linejoin="round"/>
+    <circle cx="86" cy="150" r="8" fill="#C9AD7D"/><circle cx="118" cy="96" r="8" fill="#C9AD7D"/><circle cx="139" cy="131" r="8" fill="#C9AD7D"/><circle cx="174" cy="76" r="8" fill="#F04460"/>
+    <text x="130" y="278" text-anchor="middle" fill="#8F8A83" font-family="ui-monospace, monospace" font-size="11" letter-spacing="2">ACTIVE V0.3</text>
+  </g>
+</svg>
