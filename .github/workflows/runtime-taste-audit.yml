@@ -29,20 +29,23 @@ jobs:
         run: |
           set -o pipefail
           pytest -q 2>&1 | tee hermes-test.log
-      - uses: actions/upload-artifact@v4
-        if: always()
-        with:
-          name: hermes-full-test-diagnostic
-          path: hermes-test.log
       - name: Compile and import the branded Space
         run: |
-          python -m compileall -q hermes space_app.py
-          python - <<'PY'
+          set -o pipefail
+          python -m compileall -q hermes scripts space_app.py
+          python - <<'PY' 2>&1 | tee hermes-import.log
           import space_app
           assert space_app.app is not None
           assert 'RAVEN ECOSYSTEM' in open('space_app.py', encoding='utf-8').read()
           print('Hermes Space imported without launching a server.')
           PY
+      - uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: hermes-runtime-diagnostic
+          path: |
+            hermes-test.log
+            hermes-import.log
 
   taste:
     runs-on: ubuntu-latest
