@@ -1,0 +1,60 @@
+name: Runtime and Taste Audit
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  runtime:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+          cache: pip
+      - name: Install lightweight runtime and audit tools
+        run: |
+          python -m pip install --upgrade pip
+          pip install -e '.[dev,space]'
+      - name: Lint
+        run: ruff check hermes tests space_app.py
+      - name: Test
+        run: pytest -q
+      - name: Compile and import the branded Space
+        run: |
+          python -m compileall -q hermes space_app.py
+          python - <<'PY'
+          import space_app
+          assert space_app.app is not None
+          assert 'RAVEN ECOSYSTEM' in space_app.BRAND_CSS or 'RAVEN ECOSYSTEM' in open('space_app.py', encoding='utf-8').read()
+          print('Hermes Space imported without launching a server.')
+          PY
+
+  taste:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Verify visual system and disclosures
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+
+          required = ['#050505', '#c8273f', '#c9ad7d', '#f4efe7']
+          interface = Path('index.html').read_text(encoding='utf-8').lower()
+          space = Path('space_app.py').read_text(encoding='utf-8').lower()
+          combined = interface + space
+          for token in required:
+              assert token in combined, f'missing canonical brand token {token}'
+          assert 'random weights' in space, 'public demo disclosure was removed'
+          assert 'app.launch()' in space and 'if __name__ == "__main__"' in space
+          assert '#a78bfa' not in interface and '#6d7cff' not in interface, 'legacy violet palette returned'
+          assert 'prefers-reduced-motion' in interface
+          print('Hermes visual and disclosure contract passed.')
+          PY
