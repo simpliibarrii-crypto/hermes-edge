@@ -62,7 +62,7 @@ def chat(message, preset, history):
     return history, history, ""
 
 
-with gr.Blocks(title="Hermes Edge Demo", css=BRAND_CSS) as app:
+with gr.Blocks(title="Hermes Edge Demo") as app:
     gr.HTML(
         """
         <section class="hermes-hero">
@@ -84,7 +84,7 @@ with gr.Blocks(title="Hermes Edge Demo", css=BRAND_CSS) as app:
         value="hermes-270m",
         label="Model profile",
     )
-    chatbot = gr.Chatbot(type="messages", height=400, label="Route demonstration")
+    chatbot = gr.Chatbot(height=400, label="Route demonstration")
     msg = gr.Textbox(
         placeholder="Send a demonstration prompt...",
         label="Message",
@@ -101,4 +101,4 @@ with gr.Blocks(title="Hermes Edge Demo", css=BRAND_CSS) as app:
 
 
 if __name__ == "__main__":
-    app.launch()
+    app.launch(css=BRAND_CSS)
