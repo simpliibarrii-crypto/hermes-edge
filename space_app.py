@@ -1,7 +1,7 @@
 import gradio as gr
 
 from hermes.config import PRESETS
-from hermes.inference import DemoHermesInference
+from hermes.demo_inference import DemoHermesInference
 
 
 demo_models = {preset: DemoHermesInference(preset) for preset in PRESETS}
@@ -54,6 +54,7 @@ body { background:#050505 !important; }
 
 
 def chat(message, preset, history):
+    history = list(history or [])
     model = demo_models[preset]
     response = model.chat(message)
     history.append({"role": "user", "content": message})
@@ -74,7 +75,7 @@ with gr.Blocks(title="Hermes Edge Demo", css=BRAND_CSS) as app:
             <tbody><tr><td>hermes-270m</td><td>~270M</td><td>Budget mobile devices</td></tr><tr><td>hermes-500m</td><td>~500M</td><td>Flagship mobile devices</td></tr><tr><td>hermes-1b</td><td>~1B</td><td>Higher-memory phones and tablets</td></tr></tbody>
           </table>
         </section>
-        <div class="disclosure"><strong>Architecture demonstration.</strong> This public demo uses random weights to exercise the pipeline and interface. It does not demonstrate trained model quality or measured on-device performance.</div>
+        <div class="disclosure"><strong>Architecture demonstration.</strong> This public demo uses a deterministic, no-weights engine to exercise the routing contract and interface. It does not demonstrate trained model quality or measured on-device performance.</div>
         """
     )
 
