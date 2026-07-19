@@ -24,7 +24,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -e '.[dev,space]'
       - name: Lint redesigned Space
-        run: ruff check space_app.py --ignore=E501
+        run: ruff check space_app.py hermes/demo_inference.py --ignore=E501
       - name: Test repository runtime with diagnostic log
         run: |
           set -o pipefail
@@ -62,7 +62,8 @@ jobs:
           combined = interface + space
           for token in required:
               assert token in combined, f'missing canonical brand token {token}'
-          assert 'random weights' in space, 'public demo disclosure was removed'
+          assert 'deterministic, no-weights engine' in space
+          assert 'does not demonstrate trained model quality' in space
           assert 'app.launch()' in space and 'if __name__ == "__main__"' in space
           assert '#a78bfa' not in interface and '#6d7cff' not in interface, 'legacy violet palette returned'
           assert 'prefers-reduced-motion' in interface
