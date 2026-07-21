@@ -22,7 +22,7 @@ jobs:
           show-progress: false
       - name: Public release scan
         run: python scripts/public_release_check.py
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: ${{ matrix.python-version }}
       - name: Install
@@ -90,7 +90,7 @@ jobs:
             --source=/repo \
             --redact \
             --verbose
-      - uses: actions/setup-python@v6
+      - uses: actions/setup-python@v7
         with:
           python-version: '3.11'
       - name: Install audit tools
