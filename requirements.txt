@@ -1,27 +1,2 @@
-# Core: LiteRT-LM runtime & conversion
-litert-lm>=0.13.0
-litert-torch>=0.9.0
-ai-edge-litert>=2.1.6
-
-# Model & tokenizer
-torch>=2.4.0
-transformers>=4.44.0
-sentencepiece>=0.2.0
-
-# Conversion (TFLite lowering)
-tf-nightly
-
-# Utilities
-numpy>=1.26.0
-tqdm>=4.66.0
-psutil>=7.2.2
-
-# API / serving (HF Space)
-gradio>=5.0.0
-httpx>=0.27.0
-
-# HF Hub
-huggingface_hub<1.24
-
-# DSPark / draft model (optional - CPU only)
-# onnxruntime>=1.18.0
+pydantic==2.6.1
+pyyaml==6.0.1
